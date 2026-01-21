@@ -194,6 +194,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		final_response_after_failure: bool = True,
 		llm_screenshot_size: tuple[int, int] | None = None,
 		_url_shortening_limit: int = 25,
+		browser_temp_dir: str | None = None,
 		**kwargs,
 	):
 		# Validate llm_screenshot_size
@@ -398,8 +399,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		import time
 
 		timestamp = int(time.time())
-		base_tmp = Path(tempfile.gettempdir())
-		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
+		if not browser_temp_dir:
+			browser_temp_dir_path = Path(tempfile.gettempdir())
+		else:	
+			browser_temp_dir_path = Path(browser_temp_dir)
+		self.agent_directory = browser_temp_dir_path / f'browser_use_agent_{self.id}_{timestamp}'
 
 		# Initialize file system and screenshot service
 		self._set_file_system(file_system_path)

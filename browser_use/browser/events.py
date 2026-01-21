@@ -121,6 +121,12 @@ class NavigateToUrlEvent(BaseEvent[None]):
 	# time limits enforced by bubus, not exposed to LLM:
 	event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_NavigateToUrlEvent', 15.0))  # seconds
 
+class HoverElementEvent(ElementSelectedEvent[dict | None]):
+	"""Hover over an element."""
+
+	node: 'EnhancedDOMTreeNode'
+
+	event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_HoverElementEvent', 15.0))  # seconds
 
 class ClickElementEvent(ElementSelectedEvent[dict[str, Any] | None]):
 	"""Click an element."""

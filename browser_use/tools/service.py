@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import (
+	HoverElementEvent,
 	ClickCoordinateEvent,
 	ClickElementEvent,
 	CloseTabEvent,
@@ -35,6 +36,7 @@ from browser_use.observability import observe_debug
 from browser_use.tools.registry.service import Registry
 from browser_use.tools.utils import get_click_description
 from browser_use.tools.views import (
+	HoverElementAction,
 	ClickElementAction,
 	ClickElementActionIndexOnly,
 	CloseTabAction,
@@ -58,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
 # This must be done after all imports are complete
+HoverElementEvent.model_rebuild()
 ClickElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
 ScrollEvent.model_rebuild()
@@ -361,7 +364,36 @@ class Tools(Generic[Context]):
 
 		# Register click action (index-only by default)
 		self._register_click_action()
+		
+		@self.registry.action('Hover element by index', param_model=HoverElementAction)
+		async def hover_element(params: HoverElementAction, browser_session: BrowserSession):
+			# Look up the node from the selector map
+			node = await browser_session.get_element_by_index(params.index)
+			if node is None:
+				raise ValueError(f'Element index {params.index} not found in browser state')
 
+			# Dispatch hover event with node
+			try:
+				event = browser_session.event_bus.dispatch(HoverElementEvent(node=node))
+				await event
+				# Wait for handler to complete and get any exception or metadata
+				hover_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
+				memory = f'Hovered over element with index {params.index}'
+				msg = f'🖱️  {memory}'
+				logger.info(msg)
+
+				# Include hover coordinates in metadata if available
+				return ActionResult(
+					extracted_content=msg,
+					long_term_memory=memory,
+					metadata=hover_metadata if isinstance(hover_metadata, dict) else None,
+				)
+			except BrowserError as e:
+				return handle_browser_error(e)
+			except Exception as e:
+				error_msg = f'Failed to hover over element {params.index}: {str(e)}'
+				return ActionResult(error=error_msg)
+		
 		@self.registry.action(
 			'Input text into element by index.',
 			param_model=InputTextAction,

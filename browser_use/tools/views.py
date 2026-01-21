@@ -47,7 +47,11 @@ class ClickElementActionIndexOnly(BaseModel):
 
 	index: int = Field(ge=1, description='Element index from browser_state')
 
-
+class HoverElementAction(BaseModel):
+	"""
+	Moves the mouse over the element identified by the index in the selector map.
+	"""
+	index: int = Field(ge=1, description='Element index from browser_state')
 class InputTextAction(BaseModel):
 	index: int = Field(ge=0, description='from browser_state')
 	text: str
