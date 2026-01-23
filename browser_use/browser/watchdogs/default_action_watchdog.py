@@ -10,6 +10,7 @@ from browser_use.browser.events import (
 	HoverElementEvent,
 	ClickCoordinateEvent,
 	ClickElementEvent,
+	DragElementEvent,
 	GetDropdownOptionsEvent,
 	GoBackEvent,
 	GoForwardEvent,
@@ -32,6 +33,7 @@ from browser_use.observability import observe_debug
 HoverElementEvent.model_rebuild()
 ClickCoordinateEvent.model_rebuild()
 ClickElementEvent.model_rebuild()
+DragElementEvent.model_rebuild()
 GetDropdownOptionsEvent.model_rebuild()
 SelectDropdownOptionEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
@@ -334,6 +336,48 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'Element xpath: {element_node.xpath}')
 
 			return click_metadata if isinstance(click_metadata, dict) else None
+		except Exception as e:
+			raise
+
+	@observe_debug(ignore_input=True, ignore_output=True, name='drag_element_event')
+	async def on_DragElementEvent(self, event: DragElementEvent) -> dict | None:
+		"""Handle drag element request with CDP."""
+		import pdb; pdb.set_trace()
+		try:
+			# Check if session is alive before attempting any operations
+			if not self.browser_session.agent_focus_target_id:
+				error_msg = 'Cannot execute click: browser session is corrupted (target_id=None). Session may have crashed.'
+				self.logger.error(f'{error_msg}')
+				raise BrowserError(error_msg)
+
+			# Use the provided node
+			element_node = event.node
+			bar_node = event.bar_node
+			index_for_logging = element_node.backend_node_id or 'unknown'
+			starting_target_id = self.browser_session.agent_focus_target_id
+
+			# Check if element is a file input (should not be clicked)
+			if self.browser_session.is_file_input(element_node):
+				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
+				self.logger.info(f'{msg}')
+				# Return validation error instead of raising to avoid ERROR logs
+				return {'validation_error': msg}
+
+
+			# Perform the actual click using internal implementation
+			drag_metadata = await self._handle_drag_element_impl(element_node, bar_node)
+
+			# Check for validation errors - return them without raising to avoid ERROR logs
+			if isinstance(drag_metadata, dict) and 'validation_error' in drag_metadata:
+				self.logger.info(f'{drag_metadata["validation_error"]}')
+				return drag_metadata
+
+			# Build success message
+			msg = f'Clicked button {element_node.node_name}: {element_node.get_all_children_text(max_depth=2)}'
+			self.logger.debug(f'🖱️ {msg}')
+			self.logger.debug(f'Element xpath: {element_node.xpath}')
+
+			return drag_metadata if isinstance(drag_metadata, dict) else None
 		except Exception as e:
 			raise
 
@@ -895,6 +939,321 @@ class DefaultActionWatchdog(BaseWatchdog):
 				message=f'Failed to click element: {str(e)}',
 				long_term_memory=error_detail,
 			)
+	
+	async def _handle_drag_element_impl(self, slider_node: EnhancedDOMTreeNode, bar_node: EnhancedDOMTreeNode) -> dict | None:
+		"""
+		Click an element using pure CDP with multiple fallback methods for getting element geometry.
+
+		Args:
+			slider_node: The DOM element to drag
+			bar_node: The DOM element to drag bar
+		"""
+
+		try:
+			# Get CDP client
+			cdp_session = await self.browser_session.cdp_client_for_node(slider_node)
+
+			# Get the correct session ID for the element's frame
+			session_id = cdp_session.session_id
+
+			# Get element bounds
+			backend_node_id = slider_node.backend_node_id
+			bar_backend_node_id = bar_node.backend_node_id
+
+			# Get viewport dimensions for visibility checks
+			layout_metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
+			viewport_width = layout_metrics['layoutViewport']['clientWidth']
+			viewport_height = layout_metrics['layoutViewport']['clientHeight']
+
+			# Scroll element into view FIRST before getting coordinates
+			try:
+				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
+					params={'backendNodeId': backend_node_id}, session_id=session_id
+				)
+				await asyncio.sleep(0.05)  # Wait for scroll to complete
+				self.logger.debug('Scrolled element into view before getting coordinates')
+			except Exception as e:
+				self.logger.debug(f'Failed to scroll element into view: {e}')
+
+			# Get element coordinates using the unified method AFTER scrolling
+			element_rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
+			bar_rect = await self.browser_session.get_element_coordinates(bar_backend_node_id, cdp_session)
+			if element_rect is None or bar_rect is None:
+				self.logger.warning('Could not get element or bar geometry from any method, falling back to JavaScript click')
+				return None
+
+			element_x, element_y, element_width, element_height = element_rect.x, element_rect.y, element_rect.width, element_rect.height
+			bar_x, bar_y, bar_width, bar_height = bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height
+			drag_x_offset = (element_x - bar_x) + (bar_width - element_width) + 5
+			drag_y_offset = (element_y - bar_y) + (bar_height - element_height) + 5
+
+			# Convert rect to quads format if we got coordinates
+			quads = []
+			if element_rect:
+				# Convert DOMRect to quad format
+				x, y, w, h = element_rect.x, element_rect.y, element_rect.width, element_rect.height
+				quads = [
+					[
+						x,
+						y,  # top-left
+						x + w,
+						y,  # top-right
+						x + w,
+						y + h,  # bottom-right
+						x,
+						y + h,  # bottom-left
+					]
+				]
+				self.logger.debug(
+					f'Got coordinates from unified method: {element_rect.x}, {element_rect.y}, {element_rect.width}x{element_rect.height}'
+				)
+
+			# If we still don't have quads, fall back to JS click
+			if not quads:
+				self.logger.warning('Could not get element geometry from any method, falling back to JavaScript click')
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					assert 'object' in result and 'objectId' in result['object'], (
+						'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+					)
+					object_id = result['object']['objectId']
+
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+					await asyncio.sleep(0.05)
+					# Navigation is handled by BrowserSession via events
+					return None
+				except Exception as js_e:
+					self.logger.warning(f'CDP JavaScript click also failed: {js_e}')
+					if 'No node with given id found' in str(js_e):
+						raise Exception('Element with given id not found')
+					else:
+						raise Exception(f'Failed to click element: {js_e}')
+
+			# Find the largest visible quad within the viewport
+			best_quad = None
+			best_area = 0
+
+			for quad in quads:
+				if len(quad) < 8:
+					continue
+
+				# Calculate quad bounds
+				xs = [quad[i] for i in range(0, 8, 2)]
+				ys = [quad[i] for i in range(1, 8, 2)]
+				min_x, max_x = min(xs), max(xs)
+				min_y, max_y = min(ys), max(ys)
+
+				# Check if quad intersects with viewport
+				if max_x < 0 or max_y < 0 or min_x > viewport_width or min_y > viewport_height:
+					continue  # Quad is completely outside viewport
+
+				# Calculate visible area (intersection with viewport)
+				visible_min_x = max(0, min_x)
+				visible_max_x = min(viewport_width, max_x)
+				visible_min_y = max(0, min_y)
+				visible_max_y = min(viewport_height, max_y)
+
+				visible_width = visible_max_x - visible_min_x
+				visible_height = visible_max_y - visible_min_y
+				visible_area = visible_width * visible_height
+
+				if visible_area > best_area:
+					best_area = visible_area
+					best_quad = quad
+
+			if not best_quad:
+				# No visible quad found, use the first quad anyway
+				best_quad = quads[0]
+				self.logger.warning('No visible quad found, using first quad')
+
+			# Calculate center point of the best quad
+			center_x = sum(best_quad[i] for i in range(0, 8, 2)) / 4
+			center_y = sum(best_quad[i] for i in range(1, 8, 2)) / 4
+
+			# Ensure click point is within viewport bounds
+			center_x = max(0, min(viewport_width - 1, center_x))
+			center_y = max(0, min(viewport_height - 1, center_y))
+
+			# Calculate target drag point
+			target_drag_x = center_x + drag_x_offset
+			target_drag_y = center_y + drag_y_offset
+
+			# Check for occlusion before attempting CDP click
+			is_occluded = await self._check_element_occlusion(backend_node_id, center_x, center_y, cdp_session)
+
+			if is_occluded:
+				self.logger.debug('🚫 Element is occluded, falling back to JavaScript click')
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					assert 'object' in result and 'objectId' in result['object'], (
+						'Failed to find DOM element based on backendNodeId'
+					)
+					object_id = result['object']['objectId']
+
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+					await asyncio.sleep(0.05)
+					return None
+				except Exception as js_e:
+					self.logger.error(f'JavaScript click fallback failed: {js_e}')
+					raise Exception(f'Failed to click occluded element: {js_e}')
+
+			# Perform the click using CDP (element is not occluded)
+			try:
+				self.logger.debug(f'👆 Dragging mouse over element before clicking x: {center_x}px y: {center_y}px ...')
+				# Move mouse to element
+				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+					params={
+						'type': 'mouseMoved',
+						'x': center_x,
+						'y': center_y,
+					},
+					session_id=session_id,
+				)
+				await asyncio.sleep(0.05)
+
+				# Mouse down
+				self.logger.debug(f'👆🏾 Clicking x: {center_x}px y: {center_y}px ...')
+				try:
+					await asyncio.wait_for(
+						cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mousePressed',
+								'x': center_x,
+								'y': center_y,
+								'button': 'left',
+								'clickCount': 1,
+							},
+							session_id=session_id,
+						),
+						timeout=3.0,  # 3 second timeout for mousePressed
+					)
+					await asyncio.sleep(0.08)
+				except TimeoutError:
+					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
+					# Don't sleep if we timed out
+				
+				# Mouse move
+				try:
+					await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+						params={
+							'type': 'mouseMoved',
+							'x': target_drag_x,
+							'y': target_drag_y,
+						},
+						session_id=session_id,
+					)
+					await asyncio.sleep(0.05)
+				except TimeoutError:
+					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
+					# Don't sleep if we timed out
+
+
+				# Mouse up
+				try:
+					await asyncio.wait_for(
+						cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mouseReleased',
+								'x': center_x,
+								'y': center_y,
+								'button': 'left',
+								'clickCount': 1,
+							},
+							session_id=session_id,
+						),
+						timeout=5.0,  # 5 second timeout for mouseReleased
+					)
+				except TimeoutError:
+					self.logger.debug('⏱️ Mouse up timed out (possibly due to lag or dialog popup), continuing...')
+
+				self.logger.debug('🖱️ Clicked successfully using x,y coordinates')
+
+				# Return coordinates as dict for metadata
+				return {'drag_x': target_drag_x, 'drag_y': target_drag_y}
+
+			except Exception as e:
+				self.logger.warning(f'CDP click failed: {type(e).__name__}: {e}')
+				# Fall back to JavaScript click via CDP
+				try:
+					result = await cdp_session.cdp_client.send.DOM.resolveNode(
+						params={'backendNodeId': backend_node_id},
+						session_id=session_id,
+					)
+					assert 'object' in result and 'objectId' in result['object'], (
+						'Failed to find DOM element based on backendNodeId, maybe page content changed?'
+					)
+					object_id = result['object']['objectId']
+
+					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
+						params={
+							'functionDeclaration': 'function() { this.click(); }',
+							'objectId': object_id,
+						},
+						session_id=session_id,
+					)
+
+					# Small delay for dialog dismissal
+					await asyncio.sleep(0.1)
+
+					return None
+				except Exception as js_e:
+					self.logger.warning(f'CDP JavaScript click also failed: {js_e}')
+					raise Exception(f'Failed to click element: {e}')
+			finally:
+				# Always re-focus back to original top-level page session context in case click opened a new tab/popup/window/dialog/etc.
+				# Use timeout to prevent hanging if dialog is blocking
+				try:
+					cdp_session = await asyncio.wait_for(self.browser_session.get_or_create_cdp_session(focus=True), timeout=3.0)
+					await asyncio.wait_for(
+						cdp_session.cdp_client.send.Runtime.runIfWaitingForDebugger(session_id=cdp_session.session_id),
+						timeout=2.0,
+					)
+				except TimeoutError:
+					self.logger.debug('⏱️ Refocus after click timed out (page may be blocked by dialog). Continuing...')
+				except Exception as e:
+					self.logger.debug(f'⚠️ Refocus error (non-critical): {type(e).__name__}: {e}')
+
+		except URLNotAllowedError as e:
+			raise e
+		except BrowserError as e:
+			raise e
+		except Exception as e:
+			# Extract key element info for error message
+			element_info = f'<{slider_node.tag_name or "unknown"}'
+			if slider_node.backend_node_id:
+				element_info += f' index={slider_node.backend_node_id}'
+			element_info += '>'
+
+			# Create helpful error message based on context
+			error_detail = f'Failed to click element {element_info}. The element may not be interactable or visible.'
+
+			# Add hint if element has index (common in code-use mode)
+			if slider_node.backend_node_id:
+				error_detail += f' If the page changed after navigation/interaction, the index [{slider_node.backend_node_id}] may be stale. Get fresh browser state before retrying.'
+
+			raise BrowserError(
+				message=f'Failed to click element: {str(e)}',
+				long_term_memory=error_detail,
+			)
+	
 
 	async def _click_on_coordinate(self, coordinate_x: int, coordinate_y: int, force: bool = False) -> dict | None:
 		"""

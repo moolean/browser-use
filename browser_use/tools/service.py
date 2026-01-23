@@ -10,6 +10,7 @@ except ImportError:
 	Laminar = None  # type: ignore
 from pydantic import BaseModel
 
+from browser_use.actor.page import Page
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import (
@@ -17,6 +18,7 @@ from browser_use.browser.events import (
 	ClickCoordinateEvent,
 	ClickElementEvent,
 	CloseTabEvent,
+	DragElementEvent,
 	GetDropdownOptionsEvent,
 	GoBackEvent,
 	NavigateToUrlEvent,
@@ -41,6 +43,7 @@ from browser_use.tools.views import (
 	ClickElementActionIndexOnly,
 	CloseTabAction,
 	DoneAction,
+	DragDropAction,
 	ExtractAction,
 	GetDropdownOptionsAction,
 	InputTextAction,
@@ -62,6 +65,7 @@ logger = logging.getLogger(__name__)
 # This must be done after all imports are complete
 HoverElementEvent.model_rebuild()
 ClickElementEvent.model_rebuild()
+DragElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
 ScrollEvent.model_rebuild()
 UploadFileEvent.model_rebuild()
@@ -974,6 +978,289 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				extracted_content=memory,
 				metadata={'include_screenshot': True},
 			)
+		
+		# @self.registry.action(
+		# 	'Drag and drop elements or between coordinates on the page - useful for canvas drawing, sortable lists, sliders, file uploads, and UI rearrangement',
+		# 	param_model=DragDropAction,
+		# )
+		# async def drag_drop(params: DragDropAction, browser_session: BrowserSession) -> ActionResult:
+		# 	"""
+		# 	Performs a precise drag and drop operation between elements or coordinates.
+		# 	"""
+
+		# 	async def get_drag_elements(
+		# 		page,
+		# 		source_selector: str,
+		# 		target_selector: str,
+		# 	):
+		# 		"""Get source and target elements with appropriate error handling."""
+		# 		source_element = None
+		# 		target_element = None
+
+		# 		try:
+		# 			# page.locator() auto-detects CSS and XPath
+		# 			source_locator = page.locator(source_selector)
+		# 			target_locator = page.locator(target_selector)
+
+		# 			# Check if elements exist
+		# 			source_count = await source_locator.count()
+		# 			target_count = await target_locator.count()
+
+		# 			if source_count > 0:
+		# 				source_element = await source_locator.first.element_handle()
+		# 				logger.debug(f'Found source element with selector: {source_selector}')
+		# 			else:
+		# 				logger.warning(f'Source element not found: {source_selector}')
+
+		# 			if target_count > 0:
+		# 				target_element = await target_locator.first.element_handle()
+		# 				logger.debug(f'Found target element with selector: {target_selector}')
+		# 			else:
+		# 				logger.warning(f'Target element not found: {target_selector}')
+
+		# 		except Exception as e:
+		# 			logger.error(f'Error finding elements: {str(e)}')
+
+		# 		return source_element, target_element
+
+		# 	async def get_element_coordinates(
+		# 		source_element,
+		# 		target_element,
+		# 		source_position,
+		# 		target_position,
+		# 	):
+		# 		"""Get coordinates from elements with appropriate error handling."""
+		# 		source_coords = None
+		# 		target_coords = None
+
+		# 		try:
+		# 			# Get source coordinates
+		# 			if source_position:
+		# 				source_coords = (source_position.x, source_position.y)
+		# 			else:
+		# 				source_box = await source_element.bounding_box()
+		# 				if source_box:
+		# 					source_coords = (
+		# 						int(source_box['x'] + source_box['width'] / 2),
+		# 						int(source_box['y'] + source_box['height'] / 2),
+		# 					)
+
+		# 			# Get target coordinates
+		# 			if target_position:
+		# 				target_coords = (target_position.x, target_position.y)
+		# 			else:
+		# 				target_box = await target_element.bounding_box()
+		# 				if target_box:
+		# 					target_coords = (
+		# 						int(target_box['x'] + target_box['width'] / 2),
+		# 						int(target_box['y'] + target_box['height'] / 2),
+		# 					)
+		# 		except Exception as e:
+		# 			logger.error(f'Error getting element coordinates: {str(e)}')
+
+		# 		return source_coords, target_coords
+
+		# 	async def execute_drag_operation(
+		# 		page,
+		# 		source_x: int,
+		# 		source_y: int,
+		# 		target_x: int,
+		# 		target_y: int,
+		# 		steps: int,
+		# 		delay_ms: int,
+		# 	):
+		# 		"""Execute the drag operation with comprehensive error handling."""
+		# 		try:
+		# 			# Try to move to source position
+		# 			try:
+		# 				await page.mouse.move(source_x, source_y)
+		# 				logger.debug(f'Moved to source position ({source_x}, {source_y})')
+		# 			except Exception as e:
+		# 				logger.error(f'Failed to move to source position: {str(e)}')
+		# 				return False, f'Failed to move to source position: {str(e)}'
+
+		# 			# Press mouse button down
+		# 			await page.mouse.down()
+
+		# 			# Move to target position with intermediate steps
+		# 			for i in range(1, steps + 1):
+		# 				ratio = i / steps
+		# 				intermediate_x = int(source_x + (target_x - source_x) * ratio)
+		# 				intermediate_y = int(source_y + (target_y - source_y) * ratio)
+
+		# 				await page.mouse.move(intermediate_x, intermediate_y)
+
+		# 				if delay_ms > 0:
+		# 					await asyncio.sleep(delay_ms / 1000)
+
+		# 			# Move to final target position
+		# 			await page.mouse.move(target_x, target_y)
+
+		# 			# Move again to ensure dragover events are properly triggered
+		# 			await page.mouse.move(target_x, target_y)
+
+		# 			# Release mouse button
+		# 			await page.mouse.up()
+
+		# 			return True, 'Drag operation completed successfully'
+
+		# 		except Exception as e:
+		# 			return False, f'Error during drag operation: {str(e)}'
+
+		# 	page = await browser_session.get_current_page()
+
+		# 	try:
+		# 		# Initialize variables
+		# 		source_x = None
+		# 		source_y = None
+		# 		target_x = None
+		# 		target_y = None
+
+		# 		# Normalize parameters
+		# 		steps = max(1, params.steps or 10)
+		# 		delay_ms = max(0, params.delay_ms or 5)
+
+		# 		# Case 1: Element selectors provided
+		# 		if params.element_source and params.element_target:
+		# 			logger.debug('Using element-based approach with selectors')
+
+		# 			source_element, target_element = await get_drag_elements(
+		# 				page,
+		# 				params.element_source,
+		# 				params.element_target,
+		# 			)
+
+		# 			if not source_element or not target_element:
+		# 				error_msg = f'Failed to find {"source" if not source_element else "target"} element'
+		# 				return ActionResult(error=error_msg, include_in_memory=True)
+
+		# 			source_coords, target_coords = await get_element_coordinates(
+		# 				source_element, target_element, params.element_source_offset, params.element_target_offset
+		# 			)
+
+		# 			if not source_coords or not target_coords:
+		# 				error_msg = f'Failed to determine {"source" if not source_coords else "target"} coordinates'
+		# 				return ActionResult(error=error_msg, include_in_memory=True)
+
+		# 			source_x, source_y = source_coords
+		# 			target_x, target_y = target_coords
+
+		# 		# Case 2: Coordinates provided directly
+		# 		elif all(
+		# 			coord is not None
+		# 			for coord in [params.coord_source_x, params.coord_source_y, params.coord_target_x, params.coord_target_y]
+		# 		):
+		# 			logger.debug('Using coordinate-based approach')
+		# 			source_x = params.coord_source_x
+		# 			source_y = params.coord_source_y
+		# 			target_x = params.coord_target_x
+		# 			target_y = params.coord_target_y
+		# 		else:
+		# 			error_msg = 'Must provide either source/target selectors or source/target coordinates'
+		# 			return ActionResult(error=error_msg, include_in_memory=True)
+
+		# 		# Validate coordinates
+		# 		if any(coord is None for coord in [source_x, source_y, target_x, target_y]):
+		# 			error_msg = 'Failed to determine source or target coordinates'
+		# 			return ActionResult(error=error_msg, include_in_memory=True)
+
+		# 		# Perform the drag operation
+		# 		success, message = await execute_drag_operation(
+		# 			page,
+		# 			source_x,
+		# 			source_y,
+		# 			target_x,
+		# 			target_y,
+		# 			steps,
+		# 			delay_ms,
+		# 		)
+
+		# 		if not success:
+		# 			logger.error(f'Drag operation failed: {message}')
+		# 			return ActionResult(error=message, include_in_memory=True)
+
+		# 		# Create descriptive message
+		# 		if params.element_source and params.element_target:
+		# 			msg = f"🖱️ Dragged element '{params.element_source}' to '{params.element_target}'"
+		# 		else:
+		# 			msg = f'🖱️ Dragged from ({source_x}, {source_y}) to ({target_x}, {target_y})'
+
+		# 		logger.info(msg)
+		# 		return ActionResult(
+		# 			extracted_content=msg,
+		# 			long_term_memory=msg,
+		# 			include_extracted_content_only_once=True)
+
+		# 	except Exception as e:
+		# 		error_msg = f'Failed to perform drag and drop: {str(e)}'
+		# 		logger.error(error_msg)
+		# 		return ActionResult(error=error_msg, include_in_memory=True)
+
+		@self.registry.action(
+			'Drag and drop elements or between coordinates on the page - useful for canvas drawing, sortable lists, sliders, file uploads, and UI rearrangement',
+			param_model=DragDropAction,
+		)
+		async def drag_drop(params: DragDropAction, browser_session: BrowserSession):
+			"""
+			Performs a precise drag and drop operation between elements or coordinates.
+			"""
+			assert params.index is not None
+			try:
+				assert params.index != 0, (
+					'Cannot click on element with index 0. If there are no interactive elements use wait(), refresh(), etc. to troubleshoot'
+				)
+
+				# Look up the node from the selector map
+				node_slider_box = await browser_session.get_element_by_index(params.index)
+				node_slider_bar = await browser_session.get_element_by_index(params.index + 1)
+
+				if node_slider_box is None or node_slider_bar is None:
+					msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
+					logger.warning(f'⚠️ {msg}')
+					return ActionResult(extracted_content=msg)
+
+				# Get description of clicked element
+				element_desc = get_click_description(node_slider_box)
+
+				# Highlight the element being clicked (truly non-blocking)
+				create_task_with_error_handling(
+					browser_session.highlight_interaction_element(node_slider_box), name='highlight_click_element', suppress_exceptions=True
+				)
+				import pdb; pdb.set_trace()
+				event = browser_session.event_bus.dispatch(DragElementEvent(node=node_slider_box, bar_node=node_slider_bar))
+				await event
+				# Wait for handler to complete and get any exception or metadata
+				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
+
+				# Check if result contains validation error (e.g., trying to click <select> or file input)
+				if isinstance(click_metadata, dict) and 'validation_error' in click_metadata:
+					error_msg = click_metadata['validation_error']
+					# If it's a select element, try to get dropdown options as a helpful shortcut
+					if 'Cannot click on <select> elements.' in error_msg:
+						try:
+							return await dropdown_options(
+								params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
+							)
+						except Exception as dropdown_error:
+							logger.debug(
+								f'Failed to get dropdown options as shortcut during click on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
+							)
+					return ActionResult(error=error_msg)
+
+				# Build memory with element info
+				memory = f'Dragged {element_desc}'
+				logger.info(f'🖱️ {memory}')
+
+				# Include click coordinates in metadata if available
+				return ActionResult(
+					extracted_content=memory,
+					metadata=click_metadata if isinstance(click_metadata, dict) else None,
+				)
+			except BrowserError as e:
+				return handle_browser_error(e)
+			except Exception as e:
+				error_msg = f'Failed to click element {params.index}: {str(e)}'
+				return ActionResult(error=error_msg)
 
 		# Dropdown Actions
 
