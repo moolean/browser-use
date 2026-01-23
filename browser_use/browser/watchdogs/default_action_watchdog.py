@@ -342,7 +342,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 	@observe_debug(ignore_input=True, ignore_output=True, name='drag_element_event')
 	async def on_DragElementEvent(self, event: DragElementEvent) -> dict | None:
 		"""Handle drag element request with CDP."""
-		import pdb; pdb.set_trace()
 		try:
 			# Check if session is alive before attempting any operations
 			if not self.browser_session.agent_focus_target_id:
@@ -352,7 +351,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Use the provided node
 			element_node = event.node
-			bar_node = event.bar_node
 			index_for_logging = element_node.backend_node_id or 'unknown'
 			starting_target_id = self.browser_session.agent_focus_target_id
 
@@ -365,7 +363,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 
 			# Perform the actual click using internal implementation
-			drag_metadata = await self._handle_drag_element_impl(element_node, bar_node)
+			drag_metadata = await self._handle_drag_element_impl(element_node, event.drag_bar_x, event.drag_bar_y)
 
 			# Check for validation errors - return them without raising to avoid ERROR logs
 			if isinstance(drag_metadata, dict) and 'validation_error' in drag_metadata:
@@ -940,7 +938,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				long_term_memory=error_detail,
 			)
 	
-	async def _handle_drag_element_impl(self, slider_node: EnhancedDOMTreeNode, bar_node: EnhancedDOMTreeNode) -> dict | None:
+	async def _handle_drag_element_impl(self, slider_node: EnhancedDOMTreeNode, drag_bar_x: float, drag_bar_y: float) -> dict | None:
 		"""
 		Click an element using pure CDP with multiple fallback methods for getting element geometry.
 
@@ -948,7 +946,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 			slider_node: The DOM element to drag
 			bar_node: The DOM element to drag bar
 		"""
-
 		try:
 			# Get CDP client
 			cdp_session = await self.browser_session.cdp_client_for_node(slider_node)
@@ -958,7 +955,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get element bounds
 			backend_node_id = slider_node.backend_node_id
-			bar_backend_node_id = bar_node.backend_node_id
 
 			# Get viewport dimensions for visibility checks
 			layout_metrics = await cdp_session.cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
@@ -977,15 +973,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Get element coordinates using the unified method AFTER scrolling
 			element_rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
-			bar_rect = await self.browser_session.get_element_coordinates(bar_backend_node_id, cdp_session)
-			if element_rect is None or bar_rect is None:
+			if element_rect is None:
 				self.logger.warning('Could not get element or bar geometry from any method, falling back to JavaScript click')
 				return None
-
-			element_x, element_y, element_width, element_height = element_rect.x, element_rect.y, element_rect.width, element_rect.height
-			bar_x, bar_y, bar_width, bar_height = bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height
-			drag_x_offset = (element_x - bar_x) + (bar_width - element_width) + 5
-			drag_y_offset = (element_y - bar_y) + (bar_height - element_height) + 5
 
 			# Convert rect to quads format if we got coordinates
 			quads = []
@@ -1084,8 +1074,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			center_y = max(0, min(viewport_height - 1, center_y))
 
 			# Calculate target drag point
-			target_drag_x = center_x + drag_x_offset
-			target_drag_y = center_y + drag_y_offset
+			target_drag_x = center_x + drag_bar_x
+			target_drag_y = center_y + drag_bar_y
 
 			# Check for occlusion before attempting CDP click
 			is_occluded = await self._check_element_occlusion(backend_node_id, center_x, center_y, cdp_session)
@@ -1118,7 +1108,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Perform the click using CDP (element is not occluded)
 			try:
 				self.logger.debug(f'👆 Dragging mouse over element before clicking x: {center_x}px y: {center_y}px ...')
-				# Move mouse to element
+
 				await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
 					params={
 						'type': 'mouseMoved',
@@ -1152,19 +1142,25 @@ class DefaultActionWatchdog(BaseWatchdog):
 				
 				# Mouse move
 				try:
-					await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
-						params={
-							'type': 'mouseMoved',
-							'x': target_drag_x,
-							'y': target_drag_y,
-						},
-						session_id=session_id,
-					)
-					await asyncio.sleep(0.05)
+					# Move mouse to element with intermediate steps:
+					self.logger.debug(f'👆 Moving mouse to target position x: {target_drag_x}px y: {target_drag_y}px ...')
+					steps = 10
+					for i in range(1, steps + 1):
+						ratio = i / steps
+						intermediate_x = int(center_x + (target_drag_x - center_x) * ratio)
+						intermediate_y = int(center_y + (target_drag_y - center_y) * ratio)
+						await cdp_session.cdp_client.send.Input.dispatchMouseEvent(
+							params={
+								'type': 'mouseMoved',
+								'x': intermediate_x,
+								'y': intermediate_y,
+							},
+							session_id=session_id,
+						)
+						await asyncio.sleep(0.05)
 				except TimeoutError:
 					self.logger.debug('⏱️ Mouse down timed out (likely due to dialog), continuing...')
 					# Don't sleep if we timed out
-
 
 				# Mouse up
 				try:

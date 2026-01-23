@@ -143,7 +143,8 @@ class DragElementEvent(ElementSelectedEvent[dict[str, Any] | None]):
 
 	node: 'EnhancedDOMTreeNode'
 	button: Literal['left', 'right', 'middle'] = 'left'
-	bar_node: 'EnhancedDOMTreeNode'
+	drag_bar_x: float
+	drag_bar_y: float
 	# click_count: int = 1           # TODO
 	# expect_download: bool = False  # moved to downloads_watchdog.py
 

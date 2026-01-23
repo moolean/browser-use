@@ -1226,8 +1226,20 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				create_task_with_error_handling(
 					browser_session.highlight_interaction_element(node_slider_box), name='highlight_click_element', suppress_exceptions=True
 				)
-				import pdb; pdb.set_trace()
-				event = browser_session.event_bus.dispatch(DragElementEvent(node=node_slider_box, bar_node=node_slider_bar))
+				cdp_session = await browser_session.get_or_create_cdp_session(node_slider_box.target_id)	
+				node_slider_box_rect = await browser_session.get_element_coordinates(
+					node_slider_box.backend_node_id, cdp_session)
+				node_slider_bar_rect = await browser_session.get_element_coordinates(
+					node_slider_bar.backend_node_id, cdp_session)
+				if node_slider_box_rect is None or node_slider_bar_rect is None:
+					logger.warning('Could not get element or bar geometry from any method, falling back to JavaScript click')
+					return ActionResult(error='Could not get element or bar geometry from any method, falling back to JavaScript click')
+				box_x, box_y, box_width, box_height = node_slider_box_rect.x, node_slider_box_rect.y, node_slider_box_rect.width, node_slider_box_rect.height
+				bar_x, bar_y, bar_width, bar_height = node_slider_bar_rect.x, node_slider_bar_rect.y, node_slider_bar_rect.width, node_slider_bar_rect.height
+				drag_x_offset = (box_x - bar_x) + (bar_width - box_width) + 5
+				drag_y_offset = (box_y - bar_y) + (bar_height - box_height) + 5
+				drag_element_event = DragElementEvent(node=node_slider_box, drag_bar_x=float(drag_x_offset), drag_bar_y=float(drag_y_offset))
+				event = browser_session.event_bus.dispatch(drag_element_event)
 				await event
 				# Wait for handler to complete and get any exception or metadata
 				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
