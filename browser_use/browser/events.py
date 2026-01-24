@@ -148,6 +148,7 @@ class DragElementEvent(ElementSelectedEvent[dict[str, Any] | None]):
 	# click_count: int = 1           # TODO
 	# expect_download: bool = False  # moved to downloads_watchdog.py
 
+	# event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_DragElementEvent', 30000.0))  # seconds
 	event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_DragElementEvent', 15.0))  # seconds
 
 

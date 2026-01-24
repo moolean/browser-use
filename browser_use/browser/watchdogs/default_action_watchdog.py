@@ -961,16 +961,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 			viewport_width = layout_metrics['layoutViewport']['clientWidth']
 			viewport_height = layout_metrics['layoutViewport']['clientHeight']
 
-			# Scroll element into view FIRST before getting coordinates
-			try:
-				await cdp_session.cdp_client.send.DOM.scrollIntoViewIfNeeded(
-					params={'backendNodeId': backend_node_id}, session_id=session_id
-				)
-				await asyncio.sleep(0.05)  # Wait for scroll to complete
-				self.logger.debug('Scrolled element into view before getting coordinates')
-			except Exception as e:
-				self.logger.debug(f'Failed to scroll element into view: {e}')
-
 			# Get element coordinates using the unified method AFTER scrolling
 			element_rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
 			if element_rect is None:
@@ -997,7 +987,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.debug(
 					f'Got coordinates from unified method: {element_rect.x}, {element_rect.y}, {element_rect.width}x{element_rect.height}'
 				)
-
 			# If we still don't have quads, fall back to JS click
 			if not quads:
 				self.logger.warning('Could not get element geometry from any method, falling back to JavaScript click')
@@ -1077,34 +1066,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 			target_drag_x = center_x + drag_bar_x
 			target_drag_y = center_y + drag_bar_y
 
-			# Check for occlusion before attempting CDP click
-			is_occluded = await self._check_element_occlusion(backend_node_id, center_x, center_y, cdp_session)
-
-			if is_occluded:
-				self.logger.debug('🚫 Element is occluded, falling back to JavaScript click')
-				try:
-					result = await cdp_session.cdp_client.send.DOM.resolveNode(
-						params={'backendNodeId': backend_node_id},
-						session_id=session_id,
-					)
-					assert 'object' in result and 'objectId' in result['object'], (
-						'Failed to find DOM element based on backendNodeId'
-					)
-					object_id = result['object']['objectId']
-
-					await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-						params={
-							'functionDeclaration': 'function() { this.click(); }',
-							'objectId': object_id,
-						},
-						session_id=session_id,
-					)
-					await asyncio.sleep(0.05)
-					return None
-				except Exception as js_e:
-					self.logger.error(f'JavaScript click fallback failed: {js_e}')
-					raise Exception(f'Failed to click occluded element: {js_e}')
-
 			# Perform the click using CDP (element is not occluded)
 			try:
 				self.logger.debug(f'👆 Dragging mouse over element before clicking x: {center_x}px y: {center_y}px ...')
@@ -1120,7 +1081,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				await asyncio.sleep(0.05)
 
 				# Mouse down
-				self.logger.debug(f'👆🏾 Clicking x: {center_x}px y: {center_y}px ...')
+				self.logger.debug(f'👆🏾 Pressing mouse down at x: {center_x}px y: {center_y}px ...')
 				try:
 					await asyncio.wait_for(
 						cdp_session.cdp_client.send.Input.dispatchMouseEvent(
