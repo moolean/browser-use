@@ -10,6 +10,7 @@ except ImportError:
 	Laminar = None  # type: ignore
 from pydantic import BaseModel
 
+from browser_use.actor.page import Page
 from browser_use.agent.views import ActionModel, ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import (
@@ -17,6 +18,7 @@ from browser_use.browser.events import (
 	ClickCoordinateEvent,
 	ClickElementEvent,
 	CloseTabEvent,
+	DragElementEvent,
 	GetDropdownOptionsEvent,
 	GoBackEvent,
 	NavigateToUrlEvent,
@@ -41,6 +43,7 @@ from browser_use.tools.views import (
 	ClickElementActionIndexOnly,
 	CloseTabAction,
 	DoneAction,
+	DragDropAction,
 	ExtractAction,
 	GetDropdownOptionsAction,
 	InputTextAction,
@@ -62,6 +65,7 @@ logger = logging.getLogger(__name__)
 # This must be done after all imports are complete
 HoverElementEvent.model_rebuild()
 ClickElementEvent.model_rebuild()
+DragElementEvent.model_rebuild()
 TypeTextEvent.model_rebuild()
 ScrollEvent.model_rebuild()
 UploadFileEvent.model_rebuild()
@@ -974,6 +978,84 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				extracted_content=memory,
 				metadata={'include_screenshot': True},
 			)
+
+		@self.registry.action(
+			'Drag and drop elements or between coordinates on the page - useful for canvas drawing, sortable lists, sliders, file uploads, and UI rearrangement',
+			param_model=DragDropAction,
+		)
+		async def drag_drop(params: DragDropAction, browser_session: BrowserSession):
+			"""
+			Performs a precise drag and drop operation between elements or coordinates.
+			"""
+			assert params.index is not None
+			try:
+				assert params.index != 0, (
+					'Cannot drag on element with index 0. If there are no interactive elements use wait(), refresh(), etc. to troubleshoot'
+				)
+
+				# Look up the node from the selector map
+				node_slider_box = await browser_session.get_element_by_index(params.index)
+				node_slider_bar = await browser_session.get_element_by_index(params.index + 1)
+
+				if node_slider_box is None or node_slider_bar is None:
+					msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
+					logger.warning(f'⚠️ {msg}')
+					return ActionResult(extracted_content=msg)
+
+				# Get description of clicked element
+				element_desc = get_click_description(node_slider_box)
+
+				# Highlight the element being clicked (truly non-blocking)
+				create_task_with_error_handling(
+					browser_session.highlight_interaction_element(node_slider_box), name='highlight_click_element', suppress_exceptions=True
+				)
+				cdp_session = await browser_session.get_or_create_cdp_session(node_slider_box.target_id)	
+				node_slider_box_rect = await browser_session.get_element_coordinates(
+					node_slider_box.backend_node_id, cdp_session)
+				node_slider_bar_rect = await browser_session.get_element_coordinates(
+					node_slider_bar.backend_node_id, cdp_session)
+				if node_slider_box_rect is None or node_slider_bar_rect is None:
+					logger.warning('Could not get element or bar geometry from any method, falling back to JavaScript click')
+					return ActionResult(error='Could not get element or bar geometry from any method, falling back to JavaScript click')
+				box_x, box_y, box_width, box_height = node_slider_box_rect.x, node_slider_box_rect.y, node_slider_box_rect.width, node_slider_box_rect.height
+				bar_x, bar_y, bar_width, bar_height = node_slider_bar_rect.x, node_slider_bar_rect.y, node_slider_bar_rect.width, node_slider_bar_rect.height
+				drag_x_offset = (box_x - bar_x) + (bar_width - box_width) + 5
+				drag_y_offset = (box_y - bar_y) + (bar_height - box_height) + 5
+				drag_element_event = DragElementEvent(node=node_slider_box, drag_bar_x=float(drag_x_offset), drag_bar_y=float(drag_y_offset))
+				event = browser_session.event_bus.dispatch(drag_element_event)
+				await event
+				# Wait for handler to complete and get any exception or metadata
+				click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
+
+				# Check if result contains validation error (e.g., trying to click <select> or file input)
+				if isinstance(click_metadata, dict) and 'validation_error' in click_metadata:
+					error_msg = click_metadata['validation_error']
+					# If it's a select element, try to get dropdown options as a helpful shortcut
+					if 'Cannot click on <select> elements.' in error_msg:
+						try:
+							return await dropdown_options(
+								params=GetDropdownOptionsAction(index=params.index), browser_session=browser_session
+							)
+						except Exception as dropdown_error:
+							logger.debug(
+								f'Failed to get dropdown options as shortcut during click on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
+							)
+					return ActionResult(error=error_msg)
+
+				# Build memory with element info
+				memory = f'Dragged {element_desc}'
+				logger.info(f'🖱️ {memory}')
+
+				# Include click coordinates in metadata if available
+				return ActionResult(
+					extracted_content=memory,
+					metadata=click_metadata if isinstance(click_metadata, dict) else None,
+				)
+			except BrowserError as e:
+				return handle_browser_error(e)
+			except Exception as e:
+				error_msg = f'Failed to click element {params.index}: {str(e)}'
+				return ActionResult(error=error_msg)
 
 		# Dropdown Actions
 

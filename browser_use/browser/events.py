@@ -138,6 +138,19 @@ class ClickElementEvent(ElementSelectedEvent[dict[str, Any] | None]):
 
 	event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_ClickElementEvent', 15.0))  # seconds
 
+class DragElementEvent(ElementSelectedEvent[dict[str, Any] | None]):
+	"""Drag an element."""
+
+	node: 'EnhancedDOMTreeNode'
+	button: Literal['left', 'right', 'middle'] = 'left'
+	drag_bar_x: float
+	drag_bar_y: float
+	# click_count: int = 1           # TODO
+	# expect_download: bool = False  # moved to downloads_watchdog.py
+
+	# event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_DragElementEvent', 30000.0))  # seconds
+	event_timeout: float | None = Field(default_factory=lambda: _get_timeout('TIMEOUT_DragElementEvent', 15.0))  # seconds
+
 
 class ClickCoordinateEvent(BaseEvent[dict]):
 	"""Click at specific coordinates."""
