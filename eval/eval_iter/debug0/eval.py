@@ -5,6 +5,7 @@ import asyncio
 from browser_use.tools.service import Tools
 from browser_use.llm.openrouter.chat import ChatOpenRouter
 from browser_use import Agent, Browser, ChatBrowserUse, BrowserSession, BrowserProfile, ActionResult
+from langchain_openai import ChatOpenAI
 import logging
 import sys
 sys.path.append("/home/fallengold/Documents/browser-use")
@@ -173,7 +174,8 @@ class EvalLoader:
                         "query_template": query_template,
                         "query": query,
                         "gt": case["输出"],
-                        "case_num": case_num
+                        "case_num": case_num,
+                        "unique_id": f"{domain}_{idx}_case{case_num}"
                     }
                     self.item.append(item)
         print(f"Loaded {len(self.item)} eval items from {self.path}")
@@ -185,29 +187,59 @@ class EvalLoader:
         return self.item[index]
 
 
-def batch_test(test_path, test_res_dir):
+class LLMJudge(ChatOpenAI):
+
+    def evaluate(self, query, prediction: str, reference: str):
+        prompt = f"""请你作为一个评测专家，评估下面的回答是否**正确完整地回答了问题**。,
+问题: {query}
+回答: {prediction}
+参考答案: {reference}
+给出你的原因和结论，最终结论用<judge>True/False</judge>来表示.
+"""
+
+        response = self.invoke(
+            input=prompt
+        )
+        print(
+            f"[DEBUG] 回答: {prediction}\n参考答案: {reference}\nJudge Response: {response.content}")
+        return response.content
+
+
+async def batch_test(test_path, test_res_dir):
     data_loader = EvalLoader(test_path)
+    kwargs = {
+        "model_name": "qwen3-max-2026-01-23",
+        "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "max_tokens": 16384,
+        "temperature": 1.0,
+        "api_key": "sk-f9665c2c4e144e63b9d79fb084737b6d",
+        "extra_body": {
+            "enable_thinking": False
+        }
+    }
+    llm_judge = LLMJudge(**kwargs)
+    for test_item in data_loader.item:
+        save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
+        os.makedirs(save_path, exist_ok=True)
+        test_output = test_item.copy()
+        test_query = test_item["query"]
+        query = format_query(test_query, "")
 
-    with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
+        res = await example(
+            query, save_path=save_path
+        )
 
-        for test_item in data_loader.item:
-            save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
-            os.makedirs(save_path, exist_ok=True)
-            test_output = test_item.copy()
-            test_query = test_item["query"]
-            query = format_query(test_query, "")
-
-            res = asyncio.run(
-                example(
-                    query,
-                    save_path=save_path
-                )
-            )
-
-            print("Final Answer:", res)
-            test_output["answer"] = res
-            print(test_output)
-            output_f.write(json.dumps(test_output, ensure_ascii=False) + "\n")
+        print("Final Answer:", res)
+        test_output["answer"] = res
+        judgement_content = llm_judge.evaluate(
+            test_query, res, test_item["gt"]
+        )
+        test_output["judgement"] = judgement_content
+        is_passed = "<judge>True</judge>" in judgement_content
+        test_output["score"] = is_passed
+        with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
+            output_f.write(json.dumps(
+                test_output, ensure_ascii=False) + "\n")
 
 
 if __name__ == "__main__":
@@ -215,4 +247,4 @@ if __name__ == "__main__":
     test_path = "/home/fallengold/tmp/browser-use/eval/query_all.json"
     test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claudesonnet_debug"
     os.makedirs(test_res_dir, exist_ok=True)
-    batch_test(test_path, test_res_dir)
+    asyncio.run(batch_test(test_path, test_res_dir))
