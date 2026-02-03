@@ -119,6 +119,9 @@ Notes:
 [7575]<td />
 	13
 如果需要选择11日到13日，请先选择7511，对应的是11日，等待页面加载，然后选择7575，对应的是13日，等待页面加载，最后点击确认。
+
+9.当你完成了任务, 请详细汇报你的操作步骤和最终结果 (如果有文件下载, 请给出文件路径), 以便我了解你是如何完成任务的.
+
 """
     return formatted_query
 
@@ -172,14 +175,28 @@ async def example(query, save_path=None):
     save_trace_file = f"{save_path}/debug_trace.json"
     history.save_to_file(save_trace_file)
 
-    return history.final_result()
+    return history.model_dump()["history"][-1]["model_output"]
 
 
 class EvalLoader:
-    def __init__(self, path):
+
+    def __init__(self, path, output_path=None):
         self.path = path
         with open(self.path, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
+        if output_path and os.path.exists(output_path):
+            self.processed_unique_ids = set()
+            with open(output_path, "r", encoding="utf-8") as f:
+                # read jsonl
+                for line in f:
+                    data = json.loads(line)
+                    print(data)
+                    unique_id = data.get("unique_id", None)
+                    if unique_id:
+                        self.processed_unique_ids.add(unique_id)
+            print(
+                f"Loaded {len(self.processed_unique_ids)} processed unique ids from {output_path}, skipping them.")
+
         self.item = []
         count = 0
         for domain, value in raw_data.items():
@@ -194,6 +211,12 @@ class EvalLoader:
                     query = query_template
                     for name, value in input_field.items():
                         query = query.replace(f"<<{name}>>", str(value))
+                    unique_id = f"{domain}_{idx}_case{case_num}"
+                    if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
+                        print(
+                            f"Skipping already processed unique_id: {unique_id}")
+                        continue
+
                     item = {
                         "idx": idx,
                         "domain": domain,
@@ -202,8 +225,9 @@ class EvalLoader:
                         "query": query,
                         "gt": case["输出"],
                         "case_num": case_num,
-                        "unique_id": f"{domain}_{idx}_case{case_num}"
+                        "unique_id": unique_id
                     }
+
                     self.item.append(item)
         print(f"Loaded {len(self.item)} eval items from {self.path}")
 
@@ -235,7 +259,7 @@ class LLMJudge(ChatOpenAI):
 
 
 async def batch_test(test_path, test_res_dir):
-    data_loader = EvalLoader(test_path)
+    data_loader = EvalLoader(test_path, test_res_dir + f"/test_output.jsonl")
     kwargs = {
         "model_name": "qwen3-max-2026-01-23",
         "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
