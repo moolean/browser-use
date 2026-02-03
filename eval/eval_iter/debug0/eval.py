@@ -188,13 +188,13 @@ async def example(query, save_path=None):
 
     from browser_use import Agent, ChatAnthropic
 
-    # llm = ChatAnthropic(
-    #     base_url='https://api.ppchat.vip',
-    #     api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
-    #     model='claude-sonnet-4-20250514',
-    # )
+    llm = ChatAnthropic(
+        base_url='https://api.ppchat.vip',
+        api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+        model='claude-sonnet-4-20250514',
+    )
 
-    llm = ChatBrowserUse()  # browser-use/bu-30b-a3b-preview
+    # llm = ChatBrowserUse()  # browser-use/bu-30b-a3b-preview
 
     # Tools configuration ====================
     use_vision = False
@@ -343,6 +343,7 @@ async def batch_test(test_path, test_res_dir):
 
         # 2. Process GT file
         gt_file_content = ""
+        gt_file_path = None
         gt = test_item["gt"].copy()
         if "文件路径" in gt:
             gt_filename = gt["文件路径"]
@@ -359,6 +360,8 @@ async def batch_test(test_path, test_res_dir):
             gt.pop("图片")
         test_output["gt_file_path"] = gt_file_path if gt_file_path else "N/A"
         test_output["downloaded_file_name"] = downloaded_files
+        test_output["pred_file_content"] = pred_file_content
+        test_output["gt_file_content"] = gt_file_content
         judgement_content = llm_judge.evaluate(
             test_query, res, gt, pred_file_content=pred_file_content, gt_file_content=gt_file_content
         )
@@ -372,7 +375,7 @@ async def batch_test(test_path, test_res_dir):
 
 if __name__ == "__main__":
 
-    test_path = "/home/fallengold/tmp/browser-use/eval/query_1-9-debug.json"
-    test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_debug3"
+    test_path = "/home/fallengold/tmp/browser-use/eval/query_1-9_stefanoricci.json"
+    test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_stefanoricci_test1"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
