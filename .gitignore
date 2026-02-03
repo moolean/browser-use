@@ -83,3 +83,6 @@ product_extraction.py
 *report.md
 plot.py
 browse_user_dir/
+eval/before_spring/
+eval/test_data/
+outputs/

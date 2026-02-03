@@ -17,11 +17,12 @@ os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = 'false'
 user_data_dir = "/Users/liuyichen/Documents/repo/browser-use/eval/eval_iter/browse_user_dir"
 
 
-ACCOUNT = "stefanoricci旗舰店:凯淳AI"
-PASSWORD = "kc13581897578"
+ACCOUNT_stefanoricci = "stefanoricci旗舰店:凯淳AI"
+PASSWORD_stefanoricci = "kc13581897578"
+ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
+PASSWORD_shangxia= "kc13581897578"
 
-
-def format_query(query: str, domain: str = None) -> str:
+def format_query(query: str, account: str, password: str) -> str:
     canmo_url = "https://sycm.taobao.com/"
     qianniu_url = "https://myseller.taobao.com/"
     wanxiang_url = "https://one.alimama.com/"
@@ -41,8 +42,8 @@ def format_query(query: str, domain: str = None) -> str:
 2. **禁止写todo.md**, 你并没有权限去这么做
 
 注意：登录时请使用以下账号和密码：
-账号：{ACCOUNT}
-密码：{PASSWORD}
+账号：{account}
+密码：{password}
 
 Notes:
 1. 搜索输入框可能没有确认按钮，需要在选中输入框时输入回车才能搜索。搜索之后需要进行等待，然后检查是否出现新tab，如果出现新tab，需要切换到新tab，并等待页面加载完成。
@@ -170,7 +171,7 @@ async def example(query, save_path=None):
         flash_mode=True
     )
     # RUN ! ====================
-    history = await agent.run()
+    history = await agent.run(max_steps=30)
     # save trace file ====================
     save_trace_file = f"{save_path}/debug_trace.json"
     history.save_to_file(save_trace_file)
@@ -204,7 +205,7 @@ class EvalLoader:
                 test_cases = item.get("test_cases", [])
                 query_template = item.get("updated_query_template", None) or item.get(
                     "query_template", None)
-                print(f"Processing {domain} {idx}. index from {count} to {count + len(test_cases)}")
+                print(f"Processing {domain} {idx}. index from {count} to {count + len(test_cases) - 1}")
                 count += len(test_cases)
                 for case_num, case in enumerate(test_cases):
                     input_field = case["输入"]
@@ -216,6 +217,12 @@ class EvalLoader:
                         print(
                             f"Skipping already processed unique_id: {unique_id}")
                         continue
+                    if domain == "stefanoricci旗舰店":
+                        account = ACCOUNT_stefanoricci
+                        password = PASSWORD_stefanoricci
+                    elif domain == "上下官方旗舰店":
+                        account = ACCOUNT_shangxia
+                        password = PASSWORD_shangxia
 
                     item = {
                         "idx": idx,
@@ -225,7 +232,9 @@ class EvalLoader:
                         "query": query,
                         "gt": case["输出"],
                         "case_num": case_num,
-                        "unique_id": unique_id
+                        "unique_id": unique_id,
+                        "account": account,
+                        "password": password
                     }
 
                     self.item.append(item)
@@ -271,8 +280,9 @@ async def batch_test(test_path, test_res_dir):
         }
     }
     llm_judge = LLMJudge(**kwargs)
-    pdb.set_trace()
-    for test_item in data_loader.item[11:12]:
+    # pdb.set_trace()
+    # for test_item in data_loader.item[45:]:
+    for test_item in data_loader.item[:45]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
         # if os.path.exists(save_path):
         #     print(f"Skipping {save_path} because it already exists")
@@ -280,23 +290,23 @@ async def batch_test(test_path, test_res_dir):
         os.makedirs(save_path, exist_ok=True)
         test_output = test_item.copy()
         test_query = test_item["query"]
-        query = format_query(test_query, "")
+        query = format_query(test_query, test_item["account"], test_item["password"])
 
         res = await example(
             query, save_path=save_path
         )
 
         print("Final Answer:", res)
-        test_output["answer"] = res
-        judgement_content = llm_judge.evaluate(
-            test_query, res, test_item["gt"]
-        )
-        test_output["judgement"] = judgement_content
-        is_passed = "<judge>True</judge>" in judgement_content
-        test_output["score"] = is_passed
-        with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
-            output_f.write(json.dumps(
-                test_output, ensure_ascii=False) + "\n")
+        # test_output["answer"] = res
+        # judgement_content = llm_judge.evaluate(
+        #     test_query, res, test_item["gt"]
+        # )
+        # test_output["judgement"] = judgement_content
+        # is_passed = "<judge>True</judge>" in judgement_content
+        # test_output["score"] = is_passed
+        # with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
+        #     output_f.write(json.dumps(
+        #         test_output, ensure_ascii=False) + "\n")
 
 async def batch_eval(test_res_dir):
     kwargs = {
@@ -326,8 +336,8 @@ async def batch_eval(test_res_dir):
 
 if __name__ == "__main__":
 
-    test_path = "/Users/liuyichen/Documents/repo/browser-use//eval/query_all.json"
-    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use//outputs/test_all_claudesonnet_debug"
+    test_path = "/Users/liuyichen/Documents/repo/browser-use/eval/query_yichen.json"
+    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use//outputs/test_all_claudesonnet_9_21"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
     # asyncio.run(batch_eval(test_res_dir))
