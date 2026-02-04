@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eval Review Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .stats-card { border-radius: 15px; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .stats-card:hover { transform: translateY(-5px); }
+        .table-container { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .badge-pass { background-color: #d1e7dd; color: #0f5132; }
+        .badge-fail { background-color: #f8d7da; color: #842029; }
+        .clickable-row { cursor: pointer; }
+        .clickable-row:hover { background-color: #f1f3f5 !important; }
+        .navbar { background-color: #2b3e50 !important; }
+        .sidebar { background: white; padding: 20px; border-radius: 15px; height: fit-content; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">🚀 Browser-Use Eval Review</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card card bg-primary text-white p-3 mb-3">
+                    <h5>Total Cases</h5>
+                    <h2>{{ stats.total }}</h2>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card card bg-success text-white p-3 mb-3">
+                    <h5>Success</h5>
+                    <h2>{{ stats.passed }}</h2>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card card bg-danger text-white p-3 mb-3">
+                    <h5>Failed</h5>
+                    <h2>{{ stats.failed }}</h2>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card card bg-info text-white p-3 mb-3">
+                    <h5>Pass Rate</h5>
+                    <h2>{{ stats.pass_rate }}</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-12">
+                <div class="table-container">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="mb-0">Test Results</h4>
+                        <div class="btn-group">
+                            <a href="/" class="btn btn-outline-secondary {{ 'active' if not score_filter }}">All</a>
+                            <a href="/?score_filter=passed" class="btn btn-outline-success {{ 'active' if score_filter == 'passed' }}">Passed</a>
+                            <a href="/?score_filter=failed" class="btn btn-outline-danger {{ 'active' if score_filter == 'failed' }}">Failed</a>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Domain</th>
+                                    <th>ID</th>
+                                    <th>Query Preview</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in results %}
+                                <tr class="clickable-row" onclick="window.location='/detail/{{ item.unique_id }}'">
+                                    <td>
+                                        {% if item.score %}
+                                        <span class="badge badge-pass">PASSED</span>
+                                        {% else %}
+                                        <span class="badge badge-fail">FAILED</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><small class="text-muted">{{ item.domain }}</small></td>
+                                    <td><code>{{ item.idx }} (Case {{ item.case_num }})</code></td>
+                                    <td><div class="text-truncate" style="max-width: 400px;">{{ item.query }}</div></td>
+                                    <td>
+                                        <a href="/detail/{{ item.unique_id }}" class="btn btn-sm btn-outline-primary">View Detail</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
