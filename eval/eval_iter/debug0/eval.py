@@ -2,6 +2,10 @@
 import json
 import os
 import asyncio
+import zipfile
+import pandas as pd
+import tempfile
+import shutil
 from browser_use.tools.service import Tools
 from browser_use.llm.openrouter.chat import ChatOpenRouter
 from browser_use import Agent, Browser, ChatBrowserUse, BrowserSession, BrowserProfile, ActionResult
@@ -22,7 +26,7 @@ PASSWORD_stefanoricci = "kc13581897578"
 ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
 PASSWORD_shangxia= "kc13581897578"
 
-def format_query(query: str, account: str, password: str) -> str:
+def format_query(query: str, domain: str) -> str:
     canmo_url = "https://sycm.taobao.com/"
     qianniu_url = "https://myseller.taobao.com/"
     wanxiang_url = "https://one.alimama.com/"
@@ -36,16 +40,21 @@ def format_query(query: str, account: str, password: str) -> str:
 2.  天猫商家中心 千牛，网址是：{qianniu_url} （适用于天猫店铺运营）
 3.  阿里妈妈推广管理后台 万象，网址是：{wanxiang_url} （适用于淘宝天猫店铺的推广运营）
 
+请登入店铺{domain}
+
 如果你发现已经登陆成功了, 请直接完成任务, 不要再尝试重新登陆
 **重要**
 1. 当你通过截图发现页面没加载完, **不要尝试点击任何按钮导致页面重新刷新**, 这会导致死锁. 请继续等待页面加载完成后再进行下一步操作。
 2. **跟随指令步骤进行操作**。如果没有出现预期界面，先进行等待，如果等待后依然没有出现预期界面，要重新尝试上一步指令步骤。
 3. 当任务需要选择年月日的时候，**只使用点击切换按钮方式来选择年月**，
-3. **禁止写todo.md**, 你并没有权限去这么做。
+4. **禁止写todo.md**, 你并没有权限去这么做。
 
 注意：登录时请使用以下账号和密码：
-账号：{account}
-密码：{password}
+账号(stefanoricci旗舰店)：{ACCOUNT_stefanoricci}
+密码(stefanoricci旗舰店)：{PASSWORD_stefanoricci}
+
+账号(上下官方旗舰店)：{ACCOUNT_shangxia}
+密码(上下官方旗舰店)：{PASSWORD_shangxia}
 
 Notes:
 1. 搜索输入框可能没有确认按钮，需要在选中输入框时输入回车才能搜索。搜索之后需要进行等待，然后检查是否出现新tab，如果出现新tab，需要切换到新tab，并等待页面加载完成。
@@ -168,6 +177,65 @@ Notes:
     return formatted_query
 
 
+def parse_file(file_path):
+    print(f">>Parsing file: {file_path}")
+    if not os.path.exists(file_path):
+        return f"File not found: {file_path}"
+
+    ext = os.path.splitext(file_path)[1].lower()
+
+    if ext == '.zip':
+        zip_results = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(tmpdir)
+                    for root, dirs, files in os.walk(tmpdir):
+                        for file in files:
+                            full_path = os.path.join(root, file)
+                            # Parse each file inside the zip
+                            content = parse_file(full_path)
+                            zip_results.append(content)
+            except Exception as e:
+                return f"Error opening ZIP {file_path}: {e}"
+        return "\n\n".join(zip_results)
+
+    elif ext in ['.csv']:
+        try:
+            try:
+                df = pd.read_csv(file_path, encoding="gbk")
+            except:
+                df = pd.read_csv(file_path, encoding='utf-8')
+            return f"File: {os.path.basename(file_path)}\nContent:\n{df.head(20).to_string()}"
+        except Exception as e:
+            return f"Error reading CSV {file_path}: {e}"
+
+    elif ext in ['.xls', '.xlsx']:
+        try:
+            df = pd.read_excel(
+                file_path, engine='openpyxl' if ext == '.xlsx' else 'xlrd')
+            return f"FileName: {os.path.basename(file_path)}\nContent:\n{df.head(20).to_string()}"
+        except Exception as e:
+            return f"Error reading Excel {file_path}: {e}"
+
+    return f"File: {os.path.basename(file_path)} (unsupported format or not a data file)"
+
+
+def find_gt_file(domain, idx, filename):
+    # Basic mapping: strip "旗舰店"
+
+    mapping = {
+        "stefanoricci旗舰店": "stefanoricci",
+        "上下官方旗舰店": "上下官方"
+    }
+    folder = mapping[domain]
+    gt_file_path = os.path.join(GT_PATH, folder, str(idx), filename)
+    if os.path.exists(gt_file_path):
+        return gt_file_path
+
+    return None
+
+
 async def example(query, save_path=None):
     # chrome profile configuration ====================
     profile = BrowserProfile(
@@ -254,16 +322,10 @@ class EvalLoader:
                     for name, value in input_field.items():
                         query = query.replace(f"<<{name}>>", str(value))
                     unique_id = f"{domain}_{idx}_case{case_num}"
-                    # if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
-                    #     print(
-                    #         f"Skipping already processed unique_id: {unique_id}")
-                    #     continue
-                    if domain == "stefanoricci旗舰店":
-                        account = ACCOUNT_stefanoricci
-                        password = PASSWORD_stefanoricci
-                    elif domain == "上下官方旗舰店":
-                        account = ACCOUNT_shangxia
-                        password = PASSWORD_shangxia
+                    if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
+                        print(
+                            f"Skipping already processed unique_id: {unique_id}")
+                        continue
 
                     item = {
                         "idx": idx,
@@ -273,14 +335,11 @@ class EvalLoader:
                         "query": query,
                         "gt": case["输出"],
                         "case_num": case_num,
-                        "unique_id": unique_id,
-                        "account": account,
-                        "password": password
+                        "unique_id": unique_id
                     }
 
                     self.item.append(item)
         print(f"Loaded {len(self.item)} eval items from {self.path}")
-
 
     def __len__(self):
         return len(self.item)
@@ -291,20 +350,26 @@ class EvalLoader:
 
 class LLMJudge(ChatOpenAI):
 
-    def evaluate(self, query, prediction: str, reference: str):
-        prompt = f"""请你作为一个评测专家，评估下面的回答是否**正确完整地回答了问题**。,
-问题: {query}
-回答: {prediction}
-参考答案: {reference}
-主要对比输出的答案和参考答案是否一致，如输出答案包涵了参考答案内容也算作正确。
-给出你的原因和结论，最终结论用<judge>True/False</judge>来表示.
+    def evaluate(self, query, prediction: str, reference: str, pred_file_content: str = None, gt_file_content: str = None):
+        file_info = ""
+        if pred_file_content or gt_file_content:
+            file_info = f"\n\n模型下载文件内容:\n{pred_file_content or '未下载或无法解析'}\n\n参考答案文件内容:\n{gt_file_content or '未提供'}"
+
+        prompt = f"""
+用户问题: {query}
+Agent回答: {prediction}
+问题参考答案: {reference}
+
+**下载文件信息**
+{file_info}\n\n
+
+请你作为一个评测专家，评估下面的回答是否**正确完整地回答了问题**, 给出你的原因和结论，最终结论用<judge>True/False</judge>来表示.
 """
 
         response = self.invoke(
             input=prompt
         )
-        print(
-            f"[DEBUG] 回答: {prediction}\n参考答案: {reference}\nJudge Response: {response.content}")
+        print(">>原始prompt" + prompt)
         return response.content
 
 
@@ -323,27 +388,61 @@ async def batch_test(test_path, test_res_dir):
     llm_judge = LLMJudge(**kwargs)
     # pdb.set_trace()
     # for test_item in data_loader.item[45:]:
-    for test_item in data_loader.item[18:45]:
+    for test_item in data_loader.item[15:45]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
         # if os.path.exists(save_path):
         #     print(f"Skipping {save_path} because it already exists")
         #     continue
         os.makedirs(save_path, exist_ok=True)
+        test_output = test_item.copy()
         test_query = test_item["query"]
-        query = format_query(test_query, test_item["account"], test_item["password"])
+        query = format_query( test_item["query"], test_item['domain'])
 
         res = await example(
             query, save_path=save_path
         )
 
-        print("Final Answer:", res)
+        # 1. Process downloaded files
+        downloads_dir = os.path.join(save_path, "browser_temp")
+        pred_file_content = ""
+        if os.path.exists(downloads_dir):
+            downloaded_files = [f for f in os.listdir(
+                downloads_dir) if os.path.isfile(os.path.join(downloads_dir, f))]
+            print(f">>Downloaded files: {downloaded_files}")
+            parsed_contents = []
+            for df in downloaded_files:
+                parsed_contents.append(parse_file(
+                    os.path.join(downloads_dir, df)))
+            pred_file_content = "\n\n".join(parsed_contents)
+
+        # 2. Process GT file
+        # gt_file_content = ""
+        # gt_file_path = None
+        # gt = test_item["gt"].copy()
+        # if "文件路径" in gt:
+        #     gt_filename = gt["文件路径"] if isinstance(
+        #         gt["文件路径"], str) else gt["文件路径"][0]
+        #     gt_file_path = find_gt_file(
+        #         test_item["domain"], test_item["idx"], gt_filename)
+        #     if gt_file_path:
+        #         gt_file_content = parse_file(gt_file_path)
+        #     else:
+        #         gt_file_content = f"Ground truth file not found: {gt_filename} for domain {test_item['domain']} idx {test_item['idx']}"
+
+        # print("Final Answer:", res)
         # test_output["answer"] = res
+        # if "图片" in gt:
+        #     gt.pop("图片")
+        # test_output["gt_file_path"] = gt_file_path if gt_file_path else "N/A"
+        # test_output["downloaded_file_name"] = downloaded_files
+        # test_output["pred_file_content"] = pred_file_content
+        # test_output["gt_file_content"] = gt_file_content
         # judgement_content = llm_judge.evaluate(
-        #     test_query, res, test_item["gt"]
+        #     test_query, res, gt, pred_file_content=pred_file_content, gt_file_content=gt_file_content
         # )
         # test_output["judgement"] = judgement_content
         # is_passed = "<judge>True</judge>" in judgement_content
-        # test_output["score"] = is_passed
+        # test_output = {"score": is_passed, **test_output}
         # with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
         #     output_f.write(json.dumps(
         #         test_output, ensure_ascii=False) + "\n")

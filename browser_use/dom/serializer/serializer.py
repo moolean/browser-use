@@ -875,6 +875,9 @@ class DOMTreeSerializer:
 		formatted_text = []
 		depth_str = depth * '\t'
 		next_depth = depth
+		# check the class name of the node
+		# if "data-role" in node.original_node.attributes.keys():
+		# 	import pdb; pdb.set_trace()
 
 		if node.original_node.node_type == NodeType.ELEMENT_NODE:
 			# Skip displaying nodes marked as should_display=False
