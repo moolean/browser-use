@@ -307,6 +307,7 @@ class Tools(Generic[Context]):
 			params: ClickElementAction | ClickElementActionIndexOnly, browser_session: BrowserSession
 		) -> ActionResult:
 			assert params.index is not None
+			# import pdb; pdb.set_trace()
 			try:
 				assert params.index != 0, (
 					'Cannot click on element with index 0. If there are no interactive elements use wait(), refresh(), etc. to troubleshoot'

@@ -40,6 +40,8 @@ def format_query(query: str, account: str, password: str) -> str:
 **重要**
 1. 当你通过截图发现页面没加载完, **不要尝试重复点击任何按钮导致页面重新刷新**, 这会导致死锁. 请继续等待页面加载完成后再进行下一步操作, 当你重复进行操作发现一直失败的时候,请等待
 2. **禁止写todo.md**, 你并没有权限去这么做
+3. **跟随指令步骤进行操作**。如果没有出现预期界面，先进行等待，如果等待后依然没有出现预期界面，要重新尝试上一步指令步骤。
+
 
 注意：登录时请使用以下账号和密码：
 账号：{account}
@@ -57,15 +59,14 @@ Notes:
 [11236]<button />
 
 6. 在点击对应按钮并等待之后，需要直接进行选择时间操作，在现实出正确的时间选择界面之前，不要进行其他操作。
-7. 选择年月时有如下例子：
-案例一：
+7. 选择年月时可以参照如下案例：
+案例一:
 [13929]<span />
 	[13930]<i />
 [13931]<span />
 	[13932]<i />
 [13933]<span />
-	2026
-	年
+	2026年
 [13936]<span />
 	1月
 [13937]<span />
@@ -73,34 +74,23 @@ Notes:
 [13939]<span />
 	[13940]<i />
 
-其中[13932]和[13938]是上个月和下个月的按钮，[13930]和[13940]是上一年和下一年的按钮。
+点击[13933]可以进行年份的选择，点击[13936]可以进行月份的选择。
 
-案例二：
-*[9588]<span />
-	*[9589]<i />
-*[9590]<span />
-	*[9591]<i />
-[9592]<span />
-	2026
-	年
-[9595]<span />
-	1月
-*[9597]<span />
-	*[9598]<i />
+案例二:
+[23987]<span />
+	[23988]<i />
+	[23989]<i />
+[23990]<span />
+[23991]<span />
+	2025年02月
+[23992]<span />
+[23993]<span />
+	[23994]<i />
+	[23995]<i />
 
-其中[9591]和[9598]是上个月和下个月的按钮，[9589]是上一年的按钮。此处没有下一年的按钮。
+点击[23991]可以同时进行年份和月份的选择
 
-案例三：
-*[6947]<span />
-	*[6943]<i />
-*[6948]<span />
-	*[6944]<i />
-[6949]<span />
-	2026
-	年
-其中[6944]是上个月的按钮，[6943]是上一年的按钮。此处没有下一年和下个月的按钮。
-
-请点击按钮切换时间界面，在点击按钮之后，需要等待一段时间，等待其加载出来。如果没有反应，多几次进行点击尝试操作。先尝试只使用切换月按钮操作。
+点击按钮进入时间选择时间界面，在点击按钮之后，需要等待一段时间，等待其加载出来。先选择年份再选择月份。
 
 8. 日期选择时如果出来是单个日历说明只能选一个固定时间。如果出来两个日历，前面索引数字较小的日历是选择起始时间，后面索引数字较大的日历是终止时间。
 当你需要选择两个时间时，必须先在前一个日历中选择起始时间，然后等待页面加载。等新的页面出现之后，再在后一个选择终止时间，等待页面加载。在确认时间之后点击确认。
@@ -121,8 +111,7 @@ Notes:
 	13
 如果需要选择11日到13日，请先选择7511，对应的是11日，等待页面加载，然后选择7575，对应的是13日，等待页面加载，最后点击确认。
 
-9.当你完成了任务, 请详细汇报你的操作步骤和最终结果 (如果有文件下载, 请给出文件路径), 以便我了解你是如何完成任务的.
-
+9.当你完成了任务, 请详细汇报你的操作步骤和最终结果 (如果有文件下载, 请给出文件路径), 以便我了解你是如何完成任务的。
 """
     return formatted_query
 
@@ -171,7 +160,7 @@ async def example(query, save_path=None):
         flash_mode=True
     )
     # RUN ! ====================
-    history = await agent.run(max_steps=30)
+    history = await agent.run(max_steps=40)
     # save trace file ====================
     save_trace_file = f"{save_path}/debug_trace.json"
     history.save_to_file(save_trace_file)
@@ -213,10 +202,10 @@ class EvalLoader:
                     for name, value in input_field.items():
                         query = query.replace(f"<<{name}>>", str(value))
                     unique_id = f"{domain}_{idx}_case{case_num}"
-                    if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
-                        print(
-                            f"Skipping already processed unique_id: {unique_id}")
-                        continue
+                    # if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
+                    #     print(
+                    #         f"Skipping already processed unique_id: {unique_id}")
+                    #     continue
                     if domain == "stefanoricci旗舰店":
                         account = ACCOUNT_stefanoricci
                         password = PASSWORD_stefanoricci
@@ -282,13 +271,12 @@ async def batch_test(test_path, test_res_dir):
     llm_judge = LLMJudge(**kwargs)
     # pdb.set_trace()
     # for test_item in data_loader.item[45:]:
-    for test_item in data_loader.item[:45]:
+    for test_item in data_loader.item[18:45]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
         # if os.path.exists(save_path):
         #     print(f"Skipping {save_path} because it already exists")
         #     continue
         os.makedirs(save_path, exist_ok=True)
-        test_output = test_item.copy()
         test_query = test_item["query"]
         query = format_query(test_query, test_item["account"], test_item["password"])
 
@@ -337,7 +325,7 @@ async def batch_eval(test_res_dir):
 if __name__ == "__main__":
 
     test_path = "/Users/liuyichen/Documents/repo/browser-use/eval/query_yichen.json"
-    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use//outputs/test_all_claudesonnet_9_21"
+    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use//outputs/test_all_claudesonnet_10_21-debug"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
     # asyncio.run(batch_eval(test_res_dir))
