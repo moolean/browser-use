@@ -346,7 +346,8 @@ async def batch_test(test_path, test_res_dir):
         gt_file_path = None
         gt = test_item["gt"].copy()
         if "文件路径" in gt:
-            gt_filename = gt["文件路径"]
+            gt_filename = gt["文件路径"] if isinstance(
+                gt["文件路径"], str) else gt["文件路径"][0]
             gt_file_path = find_gt_file(
                 test_item["domain"], test_item["idx"], gt_filename)
             if gt_file_path:
