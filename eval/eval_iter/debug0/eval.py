@@ -394,7 +394,7 @@ async def batch_test(test_path, test_res_dir):
 
 if __name__ == "__main__":
 
-    test_path = "/home/fallengold/tmp/browser-use/eval/query_1-9_stefanoricci_updated.json"
-    test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_stefanoricci_1-9_updated_debug1"
+    test_path = "/home/fallengold/tmp/browser-use/eval/query_1-9_shangxia_updated.json"
+    test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_shangxia_1-9_updated_debug1"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
