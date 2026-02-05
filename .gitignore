@@ -86,3 +86,5 @@ browse_user_dir/
 eval/before_spring/
 eval/test_data/
 outputs/
+html_dirs/
+debug_html/

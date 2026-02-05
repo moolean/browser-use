@@ -2,8 +2,10 @@ from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 llm = ChatAnthropic(
-    base_url='https://api.ppchat.vip',
-    api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+#     base_url='https://api.ppchat.vip',
+#     api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+    base_url='https://api.uniapi.io/claude',
+    api_key="sk-fx7IRkc1izDuBZH_hi_0k8jVyAlJ9wqTpQcWW2FlbiPbEn9vO67P-iOwXaI",
     model='claude-sonnet-4-20250514',
 )
 
@@ -151,6 +153,14 @@ Notes:
 9.当你完成了任务, 请详细汇报你的操作步骤和最终结果 (如果有文件下载, 请给出文件路径), 以便我了解你是如何完成任务的。
 """)
 ]
+
+
+# messages = [
+#     SystemMessage(content="You are a helpful assistant that provides concise answers."),
+#     HumanMessage(content="Translate the following text into English: 你好，世界！"
+# )
+# ]
+
 
 # Get response and print it
 response = llm.invoke(messages)

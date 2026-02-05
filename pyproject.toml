@@ -51,6 +51,7 @@ dependencies = [
     "langchain-openai>=1.1.7",
     "ffmpeg-python>=0.2.0",
     "opencv-python>=4.13.0.90",
+    "pandas>=3.0.0",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
