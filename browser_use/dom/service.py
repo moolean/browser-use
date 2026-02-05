@@ -377,6 +377,14 @@ class DomService:
 			raise TimeoutError(f'CDP requests failed or timed out: {", ".join(failed)}')
 
 		snapshot = results['snapshot']
+		# Save raw HTML for debugging (add this)
+		if True:  # Add this as a config option
+			from browser_use.dom.html_saver import save_raw_html_with_unicode
+			await save_raw_html_with_unicode(
+				cdp_session,
+				save_dir=f"./debug_html/{self.browser_session.id}",
+				prefix=f"target_{target_id}"
+			)
 		dom_tree = results['dom_tree']
 		ax_tree = results['ax_tree']
 		device_pixel_ratio = results['device_pixel_ratio']

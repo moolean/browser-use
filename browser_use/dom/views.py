@@ -54,6 +54,7 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'format',  # Synthetic attribute for date/time input format (e.g., MM/dd/yyyy)
 	'expected_format',  # Synthetic attribute for explicit expected format (e.g., AngularJS datepickers)
 	'contenteditable',  # Rich text editor detection
+	'title'
 	# Webkit shadow DOM identifiers
 	'pseudo',
 	# Accessibility properties from ax_node (ordered by importance for automation)
@@ -913,7 +914,7 @@ class SerializedDOMState:
 		output_text = DOMTreeSerializer.serialize_tree(self._root, include_attributes)
 		with open('output_text.txt', 'w') as f:
 			f.write(output_text)
-			import pdb; pdb.set_trace()
+		import pdb; pdb.set_trace()
 		return output_text
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='eval_representation')
