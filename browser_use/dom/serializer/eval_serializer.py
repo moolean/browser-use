@@ -132,6 +132,10 @@ class DOMEvalSerializer:
 
 		# Skip nodes marked as should_display=False
 		if not node.should_display:
+			if 'date-picker' in node.original_node.attributes.get('class', '') or \
+				'mx-output-bottom' in node.original_node.attributes.get('class', ''):
+				print(f'[Eval] Skipping node: {node.original_node.tag_name} with class: {node.original_node.attributes.get("class", "")}')
+				return ''
 			return DOMEvalSerializer._serialize_children(node, include_attributes, depth)
 
 		formatted_text = []

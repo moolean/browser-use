@@ -12,22 +12,19 @@ from browser_use import Agent, Browser, ChatBrowserUse, BrowserSession, BrowserP
 from langchain_openai import ChatOpenAI
 import logging
 import sys
-# Set workspace root
-workspace_root = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), "..", "..", ".."))
-sys.path.append(workspace_root)
+
+import pdb
+sys.path.append("/Users/liuyichen/Documents/repo/browser-use")
 logger = logging.getLogger(__name__)
 os.environ["BROWSER_USE_API_KEY"] = "bu_cj6ZpLpUDP8-QmcoAllBR9EK8IfAdROWhHp3moFnIaE"
 os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = 'false'
-# Set user_data_dir to a path within the workspace
-user_data_dir = os.path.join(workspace_root, "eval/eval_iter/browse_user_dir")
+user_data_dir = "/Users/liuyichen/Documents/repo/browser-use/eval/eval_iter/browse_user_dir"
 
 
-ACCOUNT = "stefanoricci旗舰店:凯淳AI"
-PASSWORD = "kc13581897578"
-
-ACCOUNT2 = "上下官方旗舰店:凯淳AI"
-PASSWORD2 = "kc13581897578"
+ACCOUNT_stefanoricci = "stefanoricci旗舰店:凯淳AI"
+PASSWORD_stefanoricci = "kc13581897578"
+ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
+PASSWORD_shangxia= "kc13581897578"
 
 GT_PATH = "/home/fallengold/tmp/browser-use/updated_ground_truth_files"
 
@@ -41,10 +38,12 @@ def format_query(query: str, domain: str = None) -> str:
 请你扮演一个资深的电商运营专家，帮助我完成以下任务：
 任务：{query}
 
-你有两个可以查询的网页，除了这三个网页之外，不能访问其他网页。
+你有三个可以查询的网页，除了这三个网页之外，不能访问其他网页。
 1.  淘宝商家中心 生意参谋，网址是：{canmo_url} （适用于淘宝店铺运营）
 2.  天猫商家中心 千牛，网址是：{qianniu_url} （适用于天猫店铺运营）
 3.  阿里妈妈推广管理后台 万象，网址是：{wanxiang_url} （适用于淘宝天猫店铺的推广运营）
+
+请登入店铺{domain}
 
 如果你发现已经登陆成功了, 请直接完成任务, 不要再尝试重新登陆
 **重要**
@@ -53,31 +52,33 @@ def format_query(query: str, domain: str = None) -> str:
 3. 当你发现需要输入手机验证码, 请耐心等待等我操作
 
 注意：登录时请使用以下账号和密码：
-账号(stefanoricci旗舰店)：{ACCOUNT}
-密码(stefanoricci旗舰店)：{PASSWORD}
+账号(stefanoricci旗舰店)：{ACCOUNT_stefanoricci}
+密码(stefanoricci旗舰店)：{PASSWORD_stefanoricci}
 
-账号(上下官方旗舰店)：{ACCOUNT2}
-密码(上下官方旗舰店)：{PASSWORD2}
+账号(上下官方旗舰店)：{ACCOUNT_shangxia}
+密码(上下官方旗舰店)：{PASSWORD_shangxia}
 
 Notes:
 1. 搜索输入框可能没有确认按钮，需要在选中输入框时输入回车才能搜索。搜索之后需要进行等待，然后检查是否出现新tab，如果出现新tab，需要切换到新tab，并等待页面加载完成。
 2. 在搜索操作之后，必须先检查是否出现新tab，如果出现新tab，需要切换到新tab，并等待页面加载完成。
 3. 如果有滑块验证码，使用drag_drop工具来完成滑块验证。
 4. 搜索具体活动时，需要在活动名称而不是大促中搜索
-5. 对于一些时间选择任务，需要先点击到对应的时间选择按钮，例如‘日’，‘月’。如果选择的是任意时间段，考虑‘自定义’按钮。之后请等待一段时间，等待其加载出来, 日期选择可能不太好用，每次选完日期需要仔细检查一下是否选对了
+5. 对于一些时间选择任务，需要先点击到对应的时间选择按钮，例如‘日’，‘月’。之后请等待一段时间，等待其加载出来, 日期选择可能不太好用，每次选完日期需要仔细检查一下是否选对了
 选择按钮时，如果按钮如下所示，选择11235按钮会按下‘日’按钮
 [11235]<button />
     日
 [11236]<button />
 
-6. 在点击对应按钮并等待之后，需要直接进行选择时间操作，在现实出正确的时间选择界面之前，不要进行其他操作。
-7. 选择年月时可以参照如下案例：
+6. 在点击对应按钮并等待之后，需要直接进行选择时间操作，在现实出正确的时间选择界面之前，不要进行其他操作。需要确保时间选择界面在网页中，如果没有时间选择界面，要重新点击或者将鼠标悬停在时间选择按钮
+7. 选择年月时有如下例子：
+案例一：
 [13929]<span />
 	[13930]<i />
 [13931]<span />
 	[13932]<i />
 [13933]<span />
-	2026年
+	2026
+	年
 [13936]<span />
 	1月
 [13937]<span />
@@ -85,11 +86,77 @@ Notes:
 [13939]<span />
 	[13940]<i />
 
-点击[13933]可以进行年份的选择，点击13936可以进行月份的选择
-请点击按钮切换时间界面，在点击按钮之后，需要等待一段时间，等待其加载出来。
+其中[13932]和[13938]是切换到上个月和下个月的按钮，[13930]和[13940]是切换到上一年和下一年的按钮。在此情景下点击[13932]按钮会切换到上个月，也就是2025年12月。
 
-8. 日期选择时如果出来是单个日历说明只能选一个固定时间。如果出来两个日历，前面索引数字较小的日历是选择起始时间，后面索引数字较大的日历是终止时间。
-当你需要选择两个时间时，必须先在前一个日历中选择起始时间，然后等待页面加载。等新的页面出现之后，再在后一个选择终止时间，等待页面加载。在确认时间之后点击确认。
+案例二：
+*[9588]<span />
+	*[9589]<i />
+*[9590]<span />
+	*[9591]<i />
+[9592]<span />
+	2026
+	年
+[9595]<span />
+	1月
+*[9597]<span />
+	*[9598]<i />
+[9599]<span />
+	一
+
+其中[9591]和[9598]是切换到上个月和下个月的按钮，[9589]是切换到上一年的按钮。此处没有切换到下一年的按钮。
+
+案例三：
+[4400]<span />
+	[4396]<i />
+[4401]<span />
+	[4397]<i />
+[4402]<span />
+	2026
+	年
+[4403]<span />
+	2月
+[4406]<th />
+	一
+其中[6944]是切换到上个月的按钮，[6943]是切换到上一年的按钮。此处没有切换到下一年的按钮。
+
+案例四：
+[30315]<span />
+	[30316]<i />
+		
+	[30317]<i />
+		
+[30318]<span />
+	
+[30319]<span />
+	2025年02月
+[30320]<span />
+	
+[30321]<span />
+	[30322]<i />
+		
+	[30323]<i />
+		
+其中[30318]和[30320]是切换到上个月和下个月的按钮，[30316]和[30323]是切换到上一年和下一年的按钮。
+
+
+请点击按钮切换时间界面，在点击按钮之后，需要等待一段时间，等待其加载出来。如果没有反应，多几次进行点击尝试操作。先尝试只使用切换月按钮操作。
+
+7. 对于万象台的时间选择任务，如果问题是时间段，**需不要在同一个日历里面选择两个时间！！！**例如：
+*[29958]<div id=trigger_mx_15789 />
+	*[29959]<div />
+		*[29960]<i />
+			
+		*[29961]<span />
+			2026-01-28
+*[29962]<div id=trigger_mx_15790 />
+	*[29963]<div />
+		*[29964]<i />
+			
+		*[29965]<span />
+			昨日
+你需要点击[29960]，在其对应的日历中选择第一个时间，等待三秒钟等待页面刷新，然后点击[29964]，在其对应的日历中选择第二个时间。
+
+8. 如果出来两个日历，前面索引数字较小的日历是选择起始时间，后面索引数字较大的日历是终止时间。当你需要选择两个时间时，必须先在前一个日历中选择起始时间，然后等待页面加载。等新的页面出现之后，再在后一个选择终止时间，等待页面加载。在确认时间之后点击确认。
 
 例如
 [7511]<td />
@@ -215,7 +282,7 @@ async def example(query, save_path=None):
         flash_mode=True
     )
     # RUN ! ====================
-    history = await agent.run()
+    history = await agent.run(max_steps=40)
     # save trace file ====================
     save_trace_file = f"{save_path}/debug_trace.json"
     history.save_to_file(save_trace_file)
@@ -243,11 +310,14 @@ class EvalLoader:
                 f"Loaded {len(self.processed_unique_ids)} processed unique ids from {output_path}, skipping them.")
 
         self.item = []
+        count = 0
         for domain, value in raw_data.items():
             for idx, item in value.items():
                 test_cases = item.get("test_cases", [])
                 query_template = item.get("updated_query_template", None) or item.get(
                     "query_template", None)
+                print(f"Processing {domain} {idx}. index from {count} to {count + len(test_cases) - 1}")
+                count += len(test_cases)
                 for case_num, case in enumerate(test_cases):
                     input_field = case["输入"]
                     query = query_template
@@ -330,12 +400,17 @@ async def batch_test(test_path, test_res_dir):
         }
     }
     llm_judge = LLMJudge(**kwargs)
-    for test_item in data_loader.item:
+    # pdb.set_trace()
+    # for test_item in data_loader.item[45:]:
+    for test_item in data_loader.item[15:45]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
+        # if os.path.exists(save_path):
+        #     print(f"Skipping {save_path} because it already exists")
+        #     continue
         os.makedirs(save_path, exist_ok=True)
         test_output = test_item.copy()
-        test_query = f"请登入店铺{test_item['domain']}\n\n" + test_item["query"]
-        query = format_query(test_query, "")
+        test_query = test_item["query"]
+        query = format_query( test_item["query"], test_item['domain'])
 
         res = await example(
             query, save_path=save_path
@@ -398,3 +473,4 @@ if __name__ == "__main__":
     test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_shangxia_1-9_updated_debug1"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
+    # asyncio.run(batch_eval(test_res_dir))

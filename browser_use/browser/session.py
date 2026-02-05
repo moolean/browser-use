@@ -2348,7 +2348,7 @@ class BrowserSession(BaseModel):
 			rect = await self.get_element_coordinates(node.backend_node_id, cdp_session)
 
 			color = self.browser_profile.interaction_highlight_color
-			duration_ms = int(self.browser_profile.interaction_highlight_duration * 1000)
+			duration_ms = int(self.browser_profile.interaction_highlight_duration * 1000 * 5)
 
 			if not rect:
 				self.logger.debug(f'No coordinates found for backend node {node.backend_node_id}')

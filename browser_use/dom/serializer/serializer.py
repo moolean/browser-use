@@ -37,6 +37,42 @@ SVG_ELEMENTS = {
 	'tspan',
 }
 
+FORCE_MATCHING_STRINGS = [
+	{
+		"pattern": {
+			"class": "asiYysabw",
+			"mxs": "asiYysaD:_",
+		}, 
+		"target_attributes" : {
+			"data-role": "prev-year",
+		}
+	},
+	{
+		"pattern": {
+			"mxs": "asiYysaD:a",
+		},
+		"target_attributes" : {
+			"data-role": "prev-month",
+		}
+	},
+	{
+		"pattern": {
+			"mxs": "asiYysaD:b",
+		},
+		"target_attributes" : {
+			"data-role": "next-month",
+		}
+	},
+	{
+		"pattern": {
+			"mxs": "asiYysaD:c",
+		},
+		"target_attributes" : {
+			"data-role": "next-year",
+		}
+	}
+]
+
 
 class DOMTreeSerializer:
 	"""Serializes enhanced DOM trees to string format."""
@@ -126,6 +162,13 @@ class DOMTreeSerializer:
 		optimized_tree = self._optimize_tree(simplified_tree)
 		end_step2 = time.time()
 		self.timing_info['optimize_tree'] = end_step2 - start_step2
+
+		# Step 3.5: Handle calendar visibility based on top values
+		start_calendar = time.time()
+		if optimized_tree:
+			self._handle_calendar_visibility(optimized_tree)
+		end_calendar = time.time()
+		self.timing_info['handle_calendar_visibility'] = end_calendar - start_calendar
 
 		# Step 3: Apply bounding box filtering (NEW)
 		if self.enable_bbox_filtering and optimized_tree:
@@ -575,6 +618,72 @@ class DOMTreeSerializer:
 
 		return None
 
+	def _make_all_children_invisible(self, node: SimplifiedNode) -> None:
+		"""Make all children of a node invisible."""
+		if not node:
+			return
+		node.should_display = False
+		for child in node.children:
+			child.should_display = False
+			self._make_all_children_invisible(child)
+
+	def _handle_calendar_visibility(self, node: SimplifiedNode | None) -> None:
+		"""Handle special calendar visibility logic.
+
+		For calendar components with class 'asiYysjsbu unselectable' and mxa='asiYysjsD:_',
+		only the child div with class 'asiYysjsbE' that has the largest 'top' value should be visible.
+		This handles calendar views (day/month/year) where only one view is active at a time.
+		"""
+		if not node:
+			return
+
+		# Check if this is a calendar container
+		if (node.original_node.node_type == NodeType.ELEMENT_NODE and
+			node.original_node.attributes):
+			attrs = node.original_node.attributes
+			classes = attrs.get('class', '')
+			mxa_value = attrs.get('mxa', '')
+
+			# Check if this is the calendar container
+			if ('asiYysabu unselectable' in classes and
+				mxa_value == 'asiYysaD:_'):
+				# Find all children with class 'asiYysjsbE' (calendar views: day, month, year)
+				calendar_views = []
+				for (index, child) in enumerate(node.children):
+					if (child.original_node.node_type == NodeType.ELEMENT_NODE and
+						child.original_node.attributes):
+						if child.original_node.snapshot_node and child.original_node.snapshot_node.computed_styles:
+							top_value = child.original_node.snapshot_node.computed_styles.get('top', 'auto')
+							# extract the number from the top_value
+							if top_value != 'auto':
+								top_value = int(top_value.split('px')[0])
+							else:
+								top_value = 0
+							calendar_views.append((index, top_value))
+						else:
+							calendar_views.append((index, float('-inf')))
+
+				# If we found multiple calendar views, show only the one with largest top value
+				if calendar_views[2][1] >= calendar_views[1][1] and calendar_views[1][1] >= calendar_views[0][1]:
+					node.children[calendar_views[2][0]].should_display = True
+					# make the other calendar and their children invisible
+					self._make_all_children_invisible(node.children[calendar_views[1][0]])
+					self._make_all_children_invisible(node.children[calendar_views[0][0]])
+				elif calendar_views[1][1] >= calendar_views[0][1] and calendar_views[1][1] >= calendar_views[2][1]:
+					node.children[calendar_views[2][0]].should_display = True
+					# make the other calendar and their children invisible
+					self._make_all_children_invisible(node.children[calendar_views[1][0]])
+					self._make_all_children_invisible(node.children[calendar_views[2][0]])
+				elif calendar_views[0][1] >= calendar_views[1][1] and calendar_views[0][1] >= calendar_views[2][1]:
+					node.children[calendar_views[0][0]].should_display = True
+					# make the other calendar and their children invisible
+					self._make_all_children_invisible(node.children[calendar_views[1][0]])
+					self._make_all_children_invisible(node.children[calendar_views[2][0]])
+
+		# Recursively process all children
+		for child in node.children:
+			self._handle_calendar_visibility(child)
+
 	def _collect_interactive_elements(self, node: SimplifiedNode, elements: list[SimplifiedNode]) -> None:
 		"""Recursively collect interactive elements that are also visible."""
 		is_interactive = self._is_interactive_cached(node.original_node)
@@ -858,6 +967,24 @@ class DOMTreeSerializer:
 		return False
 
 	@staticmethod
+	def _force_matching_strings(node: SimplifiedNode) -> None:
+		"""Force the matching strings to be displayed."""
+		if not node:
+			return
+		for pattern in FORCE_MATCHING_STRINGS:
+			if node.original_node.attributes:
+				perfect_match = True
+				for key, value in pattern['pattern'].items():
+					if node.original_node.attributes.get(key) is not None and value == node.original_node.attributes.get(key, ''):
+						# import pdb; pdb.set_trace()
+						continue
+					else:
+						perfect_match = False
+						break
+				if perfect_match:
+					node.original_node.attributes.update(pattern['target_attributes'])
+
+	@staticmethod
 	def serialize_tree(node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
 		"""Serialize the optimized tree to string format."""
 		if not node:
@@ -876,9 +1003,16 @@ class DOMTreeSerializer:
 		depth_str = depth * '\t'
 		next_depth = depth
 
+		DOMTreeSerializer._force_matching_strings(node)
+
 		if node.original_node.node_type == NodeType.ELEMENT_NODE:
 			# Skip displaying nodes marked as should_display=False
+			# TODO: Test: undisplay all
 			if not node.should_display:
+				# the date-picker and mx-output-bottom are the elements that are not displayed in the DOM tree when the display is false
+				if 'date-picker' in node.original_node.attributes.get('class', '') or \
+					'mx-output-bottom' in node.original_node.attributes.get('class', ''):
+					return '\n'
 				for child in node.children:
 					child_text = DOMTreeSerializer.serialize_tree(child, include_attributes, depth)
 					if child_text:
@@ -1135,6 +1269,28 @@ class DOMTreeSerializer:
 						else:
 							attributes_to_include['placeholder'] = 'mm/dd/yyyy'
 							attributes_to_include['format'] = 'mm/dd/yyyy'
+
+		# Special handling for calendar navigation icons
+		# Add descriptive data-role attributes for calendar controls based on mxs attribute
+		if node.attributes and 'mxs' in node.attributes:
+			mxs_value = node.attributes.get('mxs', '')
+			# Map mxs values to calendar navigation roles
+			calendar_nav_roles = {
+				'asiYysjsD:_': 'prev-year',
+				'asiYysjsD:a': 'prev-month',
+				'asiYysjsD:b': 'next-month',
+				'asiYysjsD:c': 'next-year',
+			}
+			if mxs_value in calendar_nav_roles:
+				# Check if this is within a calendar navigation container (has class asiYysjsbx)
+				# by looking for parent or nearby context indicators
+				parent_class = ''
+				# Since we don't have easy parent access here, check if the element itself
+				# or its attributes suggest it's a calendar navigation element
+				element_classes = node.attributes.get('class', '')
+				if 'asiYysjsbv' in element_classes or 'asiYysjsbw' in element_classes:
+					# Add data-role attribute to help LLM understand the purpose
+					attributes_to_include['data-role'] = calendar_nav_roles[mxs_value]
 
 		# Include accessibility properties
 		if node.ax_node and node.ax_node.properties:
