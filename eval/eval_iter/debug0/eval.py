@@ -255,8 +255,10 @@ async def example(query, save_path=None):
     from browser_use import Agent, ChatAnthropic
 
     llm = ChatAnthropic(
-        base_url='https://api.ppchat.vip',
-        api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+        # base_url='https://api.ppchat.vip',
+        # api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+        base_url='https://api.uniapi.io/claude',
+        api_key="sk-fx7IRkc1izDuBZH_hi_0k8jVyAlJ9wqTpQcWW2FlbiPbEn9vO67P-iOwXaI",
         model='claude-sonnet-4-20250514',
     )
 
