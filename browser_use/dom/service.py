@@ -378,7 +378,7 @@ class DomService:
 
 		snapshot = results['snapshot']
 		# Save raw HTML for debugging (add this)
-		if True:  # Add this as a config option
+		if False:  # Add this as a config option
 			from browser_use.dom.html_saver import save_raw_html_with_unicode
 			await save_raw_html_with_unicode(
 				cdp_session,

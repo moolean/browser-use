@@ -882,6 +882,10 @@ class DOMTreeSerializer:
 		if node.original_node.node_type == NodeType.ELEMENT_NODE:
 			# Skip displaying nodes marked as should_display=False
 			if not node.should_display:
+				# the date-picker and mx-output-bottom are the elements that are not displayed in the DOM tree when the display is false
+				if 'date-picker' in node.original_node.attributes.get('class', '') or \
+					'mx-output-bottom' in node.original_node.attributes.get('class', ''):
+					return '\n'
 				for child in node.children:
 					child_text = DOMTreeSerializer.serialize_tree(child, include_attributes, depth)
 					if child_text:

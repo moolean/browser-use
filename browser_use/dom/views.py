@@ -54,7 +54,8 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'format',  # Synthetic attribute for date/time input format (e.g., MM/dd/yyyy)
 	'expected_format',  # Synthetic attribute for explicit expected format (e.g., AngularJS datepickers)
 	'contenteditable',  # Rich text editor detection
-	'title'
+	'title',
+	'mxv',
 	# Webkit shadow DOM identifiers
 	'pseudo',
 	# Accessibility properties from ax_node (ordered by importance for automation)
