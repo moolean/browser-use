@@ -48,7 +48,15 @@
                         <h6>Thought / Memory:</h6>
                         <p>{{ item.answer.memory }}</p>
                         <h6>Final Result:</h6>
-                        <pre><code>{{ item.answer.action[0].done.text if item.answer.action else "No done action" }}</code></pre>
+                        <pre><code>{% if item.answer.action -%}
+                            {%- for act in item.answer.action if act.done -%}
+                                {{ act.done.text }}
+                            {%- else -%}
+                                No done action found
+                            {%- endfor -%}
+                        {%- else -%}
+                            No actions recorded
+                        {%- endif %}</code></pre>
                     {% endif %}
                 </div>
 

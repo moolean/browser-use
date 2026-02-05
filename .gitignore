@@ -88,3 +88,5 @@ eval/test_data/
 outputs/
 html_dirs/
 debug_html/
+output/
+ground_truth_files/

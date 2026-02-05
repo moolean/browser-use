@@ -26,7 +26,10 @@ PASSWORD_stefanoricci = "kc13581897578"
 ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
 PASSWORD_shangxia= "kc13581897578"
 
-def format_query(query: str, domain: str) -> str:
+GT_PATH = "/home/fallengold/tmp/browser-use/updated_ground_truth_files"
+
+
+def format_query(query: str, domain: str = None) -> str:
     canmo_url = "https://sycm.taobao.com/"
     qianniu_url = "https://myseller.taobao.com/"
     wanxiang_url = "https://one.alimama.com/"
@@ -44,10 +47,9 @@ def format_query(query: str, domain: str) -> str:
 
 如果你发现已经登陆成功了, 请直接完成任务, 不要再尝试重新登陆
 **重要**
-1. 当你通过截图发现页面没加载完, **不要尝试点击任何按钮导致页面重新刷新**, 这会导致死锁. 请继续等待页面加载完成后再进行下一步操作。
-2. **跟随指令步骤进行操作**。如果没有出现预期界面，先进行等待，如果等待后依然没有出现预期界面，要重新尝试上一步指令步骤。
-3. 当任务需要选择年月日的时候，**只使用点击切换按钮方式来选择年月**，
-4. **禁止写todo.md**, 你并没有权限去这么做。
+1. 当发现页面没加载完, **禁止尝试重复点击任何按钮导致页面重新刷新**, 这会导致死锁. 请继续等待页面加载完成后再进行下一步操作, 当你重复进行操作发现一直失败的时候,请一直等待, 这是强制要求, 永远保持耐心
+2. **禁止写todo.md**, 你并没有权限去这么做
+3. 当你发现需要输入手机验证码, 请耐心等待等我操作
 
 注意：登录时请使用以下账号和密码：
 账号(stefanoricci旗舰店)：{ACCOUNT_stefanoricci}
@@ -171,8 +173,8 @@ Notes:
 [7575]<td />
 	13
 如果需要选择11日到13日，请先选择7511，对应的是11日，等待页面加载，然后选择7575，对应的是13日，等待页面加载，最后点击确认。
-9.当你完成了任务, 请详细汇报你的操作步骤和最终结果 (如果有文件下载, 请给出文件路径), 以便我了解你是如何完成任务的。
 
+9.当你完成了任务, 请详细汇报你的操作步骤和最终结果 (如果有文件下载, 请给出**所有**文件路径)。
 """
     return formatted_query
 
@@ -206,7 +208,7 @@ def parse_file(file_path):
                 df = pd.read_csv(file_path, encoding="gbk")
             except:
                 df = pd.read_csv(file_path, encoding='utf-8')
-            return f"File: {os.path.basename(file_path)}\nContent:\n{df.head(20).to_string()}"
+            return f"File: {os.path.basename(file_path)} (Suffix: {ext})\nContent:\n{df.head(20).to_string()}"
         except Exception as e:
             return f"Error reading CSV {file_path}: {e}"
 
@@ -214,7 +216,7 @@ def parse_file(file_path):
         try:
             df = pd.read_excel(
                 file_path, engine='openpyxl' if ext == '.xlsx' else 'xlrd')
-            return f"FileName: {os.path.basename(file_path)}\nContent:\n{df.head(20).to_string()}"
+            return f"File: {os.path.basename(file_path)} (Suffix: {ext})\nContent:\n{df.head(20).to_string()}"
         except Exception as e:
             return f"Error reading Excel {file_path}: {e}"
 
@@ -228,7 +230,7 @@ def find_gt_file(domain, idx, filename):
         "stefanoricci旗舰店": "stefanoricci",
         "上下官方旗舰店": "上下官方"
     }
-    folder = mapping[domain]
+    folder = mapping.get(domain, domain.replace("旗舰店", ""))
     gt_file_path = os.path.join(GT_PATH, folder, str(idx), filename)
     if os.path.exists(gt_file_path):
         return gt_file_path
@@ -265,7 +267,7 @@ async def example(query, save_path=None):
     # llm = ChatBrowserUse()  # browser-use/bu-30b-a3b-preview
 
     # Tools configuration ====================
-    use_vision = False
+    use_vision = True
     display_files_in_done_text = True
     exclude_actions = ['screenshot'] if use_vision != 'auto' else []
     tools = Tools(exclude_actions=exclude_actions,
@@ -353,19 +355,31 @@ class EvalLoader:
 class LLMJudge(ChatOpenAI):
 
     def evaluate(self, query, prediction: str, reference: str, pred_file_content: str = None, gt_file_content: str = None):
-        file_info = ""
-        if pred_file_content or gt_file_content:
-            file_info = f"\n\n模型下载文件内容:\n{pred_file_content or '未下载或无法解析'}\n\n参考答案文件内容:\n{gt_file_content or '未提供'}"
 
         prompt = f"""
-用户问题: {query}
-Agent回答: {prediction}
-问题参考答案: {reference}
+你是一个电商数据专家，负责评测 AI Agent 执行网页操作任务的结果。
 
-**下载文件信息**
-{file_info}\n\n
+**输入信息：**
+1. 用户问题: {query}
+2. Agent 最终汇报内容: {prediction}
+3. 问题参考答案 (Ground Truth): {reference}
+4. 检测到模型下载的文件信息:
+{pred_file_content if pred_file_content else "无"}
 
-请你作为一个评测专家，评估下面的回答是否**正确完整地回答了问题**, 给出你的原因和结论，最终结论用<judge>True/False</judge>来表示.
+5. 参考答案的文件信息:
+{gt_file_content if gt_file_content else "无"}
+
+**评测规则：**
+1. **结果导向判别**：如果用户要求下载/查询数据，请优先以“实际下载文件解析内容”为准。即使 Agent 在汇报内容中只提到了一个路径或漏掉了部分汇报，只要“模型下载文件内容”中包含了参考答案中要求的所有核心数据（内容一致），即判定为 True。
+2. **处理文件名冲突**：Agent 在下载多个同名文件时，系统可能自动重命名为 `filename (1).csv`, `filename (2).csv` 等。请检查所有列出的文件内容，只要这些文件的内容总和涵盖了参考答案的要求，即为正确。
+3. **宽容 Final Action 缺失**：如果用户核心任务是下载文件, 在这种情况下如果 Agent 没能准确输出最后的操作，但观察到其下载的文件数量和内容完全符合预期，应给予判定通过。
+4. **忽略非关键差异**：
+    - 忽略文件名格式的微小差异。
+    - 忽略参考答案中可能存在的图片说明干扰。
+    - 只要表格内容的核心数值、日期、和维度正确，即可判定为 True。
+
+**输出要求：**
+给出你的详细分析原因，最后结论必须用 <judge>True/False</judge> 括起来。
 """
 
         response = self.invoke(
@@ -407,78 +421,58 @@ async def batch_test(test_path, test_res_dir):
         # 1. Process downloaded files
         downloads_dir = os.path.join(save_path, "browser_temp")
         pred_file_content = ""
+        downloaded_files = []
         if os.path.exists(downloads_dir):
             downloaded_files = [f for f in os.listdir(
                 downloads_dir) if os.path.isfile(os.path.join(downloads_dir, f))]
             print(f">>Downloaded files: {downloaded_files}")
-            parsed_contents = []
-            for df in downloaded_files:
-                parsed_contents.append(parse_file(
-                    os.path.join(downloads_dir, df)))
+            parsed_contents = [parse_file(os.path.join(
+                downloads_dir, df)) for df in downloaded_files]
             pred_file_content = "\n\n".join(parsed_contents)
 
         # 2. Process GT file
-        # gt_file_content = ""
-        # gt_file_path = None
-        # gt = test_item["gt"].copy()
-        # if "文件路径" in gt:
-        #     gt_filename = gt["文件路径"] if isinstance(
-        #         gt["文件路径"], str) else gt["文件路径"][0]
-        #     gt_file_path = find_gt_file(
-        #         test_item["domain"], test_item["idx"], gt_filename)
-        #     if gt_file_path:
-        #         gt_file_content = parse_file(gt_file_path)
-        #     else:
-        #         gt_file_content = f"Ground truth file not found: {gt_filename} for domain {test_item['domain']} idx {test_item['idx']}"
+        gt_file_content = ""
+        gt_file_paths = []
+        gt = test_item["gt"].copy()
+        if isinstance(gt, dict) and "文件路径" in gt:
+            gt_filenames = gt["文件路径"]
+            if isinstance(gt_filenames, str):
+                gt_filenames = [gt_filenames]
 
-        # print("Final Answer:", res)
-        # test_output["answer"] = res
-        # if "图片" in gt:
-        #     gt.pop("图片")
-        # test_output["gt_file_path"] = gt_file_path if gt_file_path else "N/A"
-        # test_output["downloaded_file_name"] = downloaded_files
-        # test_output["pred_file_content"] = pred_file_content
-        # test_output["gt_file_content"] = gt_file_content
-        # judgement_content = llm_judge.evaluate(
-        #     test_query, res, gt, pred_file_content=pred_file_content, gt_file_content=gt_file_content
-        # )
-        # test_output["judgement"] = judgement_content
-        # is_passed = "<judge>True</judge>" in judgement_content
-        # test_output = {"score": is_passed, **test_output}
-        # with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
-        #     output_f.write(json.dumps(
-        #         test_output, ensure_ascii=False) + "\n")
+            parsed_list = []
+            for fname in gt_filenames:
+                path = find_gt_file(
+                    test_item["domain"], test_item["idx"], fname)
+                if path:
+                    gt_file_paths.append(path)
+                    parsed_list.append(parse_file(path))
+                else:
+                    parsed_list.append(f"Ground truth file not found: {fname}")
+            gt_file_content = "\n\n".join(parsed_list)
 
-async def batch_eval(test_res_dir):
-    kwargs = {
-        "model_name": "qwen3-max-2026-01-23",
-        "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        "max_tokens": 16384,
-        "temperature": 1.0,
-        "api_key": "sk-f9665c2c4e144e63b9d79fb084737b6d",
-        "extra_body": {
-            "enable_thinking": False
-        }
-    }
-    llm_judge = LLMJudge(**kwargs)
+        print("Final Answer:", res)
+        test_output["answer"] = res
+        if isinstance(gt, dict) and "图片" in gt:
+            gt.pop("图片")
+        test_output["gt_file_path"] = gt_file_paths if gt_file_paths else "N/A"
+        test_output["downloaded_file_name"] = downloaded_files
+        test_output["pred_file_content"] = pred_file_content
+        test_output["gt_file_content"] = gt_file_content
+        judgement_content = llm_judge.evaluate(
+            test_query, res, gt, pred_file_content=pred_file_content, gt_file_content=gt_file_content
+        )
+        test_output["judgement"] = judgement_content
+        is_passed = "<judge>True</judge>" in judgement_content
+        test_output = {"score": is_passed, **test_output}
+        with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
+            output_f.write(json.dumps(
+                test_output, ensure_ascii=False) + "\n")
 
-    with open(f"{test_res_dir}/test_output.jsonl", "r", encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            if i != 0:
-                continue
-            test_output = json.loads(line)
-            judgement_content = llm_judge.evaluate(
-                    test_output["query"], test_output["answer"], test_output["gt"]
-                )
-            is_passed = "<judge>True</judge>" in judgement_content
-            test_output["score"] = is_passed
-            print(judgement_content)
-            print(f"Test {i}: {test_output["unique_id"]} is passed: {is_passed}")
 
 if __name__ == "__main__":
 
-    test_path = "/Users/liuyichen/Documents/repo/browser-use/eval/query_yichen.json"
-    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use//outputs/test_all_claudesonnet_10_21-debug"
+    test_path = "/home/fallengold/tmp/browser-use/eval/query_1-9_shangxia_updated.json"
+    test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_shangxia_1-9_updated_debug1"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
     # asyncio.run(batch_eval(test_res_dir))
