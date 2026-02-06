@@ -26,7 +26,7 @@ PASSWORD_stefanoricci = "kc13581897578"
 ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
 PASSWORD_shangxia= "kc13581897578"
 
-GT_PATH = "/home/fallengold/tmp/browser-use/updated_ground_truth_files"
+GT_PATH = "/Users/liuyichen/Documents/repo/browser-use/eval/before_spring/new_gt"
 
 
 def format_query(query: str, domain: str = None) -> str:
@@ -50,6 +50,7 @@ def format_query(query: str, domain: str = None) -> str:
 1. 当发现页面没加载完, **禁止尝试重复点击任何按钮导致页面重新刷新**, 这会导致死锁. 请继续等待页面加载完成后再进行下一步操作, 当你重复进行操作发现一直失败的时候,请一直等待, 这是强制要求, 永远保持耐心
 2. **禁止写todo.md**, 你并没有权限去这么做
 3. 当你发现需要输入手机验证码, 请耐心等待等我操作
+4. 如果在点击关闭按钮后有新的弹窗出现，需要点击新弹窗中的“拒绝“、”关闭“等按钮。
 
 注意：登录时请使用以下账号和密码：
 账号(stefanoricci旗舰店)：{ACCOUNT_stefanoricci}
@@ -70,68 +71,55 @@ Notes:
 [11236]<button />
 
 6. 在点击对应按钮并等待之后，需要直接进行选择时间操作，在现实出正确的时间选择界面之前，不要进行其他操作。需要确保时间选择界面在网页中，如果没有时间选择界面，要重新点击或者将鼠标悬停在时间选择按钮
-7. 选择年月时有如下例子：
+7. 对于日期选择任务，可能需要点击年月切换按钮。如果<span类型下面有<i>标签，选择点击<i>标签，不要选择span标签。按钮可能没有反应，每次点击后需要确认是否出现预期的结果，如果没有需要再次点击。选择年月切换按钮时有如下例子：
 案例一：
-[13929]<span />
-	[13930]<i />
-[13931]<span />
-	[13932]<i />
+[13929]<span data-role="prev-year"/>
+        [13930]<i />
+[13931]<span data-role="prev-month"/>
+        [13932]<i />
 [13933]<span />
-	2026
-	年
+        2026
+        年
 [13936]<span />
-	1月
-[13937]<span />
-	[13938]<i />
-[13939]<span />
-	[13940]<i />
+        1月
+[13937]<span data-role="next-month"/>
+        [13938]<i />
+[13939]<span data-role="next-year"/>
+        [13940]<i />
 
-其中[13932]和[13938]是切换到上个月和下个月的按钮，[13930]和[13940]是切换到上一年和下一年的按钮。在此情景下点击[13932]按钮会切换到上个月，也就是2025年12月。
+其中[13932]和[13938]是切换到上个月和下个月的按钮，[13930]和[13940]是切换到上一年和下一年的按钮
 
 案例二：
-*[9588]<span />
+*[9588]<span data-role="prev-year"/>
 	*[9589]<i />
-*[9590]<span />
+*[9590]<span data-role="prev-month"/>
 	*[9591]<i />
 [9592]<span />
 	2026
 	年
 [9595]<span />
 	1月
-*[9597]<span />
+*[9597]<span data-role="next-month"/>
 	*[9598]<i />
 [9599]<span />
 	一
 
 其中[9591]和[9598]是切换到上个月和下个月的按钮，[9589]是切换到上一年的按钮。此处没有切换到下一年的按钮。
 
-案例三：
-[4400]<span />
-	[4396]<i />
-[4401]<span />
-	[4397]<i />
-[4402]<span />
-	2026
-	年
-[4403]<span />
-	2月
-[4406]<th />
-	一
-其中[6944]是切换到上个月的按钮，[6943]是切换到上一年的按钮。此处没有切换到下一年的按钮。
 
-案例四：
-[30315]<span />
+案例三：
+[30315]<span data-role="prev-year"/>
 	[30316]<i />
 		
 	[30317]<i />
 		
-[30318]<span />
+[30318]<span data-role="next-month"/>
 	
 [30319]<span />
 	2025年02月
-[30320]<span />
+[30320]<span data-role="next-month"/>
 	
-[30321]<span />
+[30321]<span data-role="next-year"/>
 	[30322]<i />
 		
 	[30323]<i />
@@ -284,7 +272,7 @@ async def example(query, save_path=None):
         flash_mode=True
     )
     # RUN ! ====================
-    history = await agent.run(max_steps=40)
+    history = await agent.run(max_steps=60)
     # save trace file ====================
     save_trace_file = f"{save_path}/debug_trace.json"
     history.save_to_file(save_trace_file)
@@ -326,10 +314,10 @@ class EvalLoader:
                     for name, value in input_field.items():
                         query = query.replace(f"<<{name}>>", str(value))
                     unique_id = f"{domain}_{idx}_case{case_num}"
-                    if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
-                        print(
-                            f"Skipping already processed unique_id: {unique_id}")
-                        continue
+                    # if output_path and os.path.exists(output_path) and unique_id in self.processed_unique_ids:
+                    #     print(
+                    #         f"Skipping already processed unique_id: {unique_id}")
+                    #     continue
 
                     item = {
                         "idx": idx,
@@ -402,13 +390,14 @@ async def batch_test(test_path, test_res_dir):
         }
     }
     llm_judge = LLMJudge(**kwargs)
-    # pdb.set_trace()
-    # for test_item in data_loader.item[45:]:
-    for test_item in data_loader.item[15:45]:
+    import pdb; pdb.set_trace()
+    for test_item in data_loader.item[37:]:
+    # for test_item in [data_loader.item[11], data_loader.item[14]]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
-        # if os.path.exists(save_path):
-        #     print(f"Skipping {save_path} because it already exists")
-        #     continue
+        print(f"Saving to {save_path}")
+        if os.path.exists(save_path):
+            print(f"Skipping {save_path} because it already exists")
+            continue
         os.makedirs(save_path, exist_ok=True)
         test_output = test_item.copy()
         test_query = test_item["query"]
@@ -470,9 +459,8 @@ async def batch_test(test_path, test_res_dir):
 
 
 if __name__ == "__main__":
-
-    test_path = "/home/fallengold/tmp/browser-use/eval/query_1-9_shangxia_updated.json"
-    test_res_dir = "/home/fallengold/tmp/browser-use/output/test_all_claude_sonnet_4_20250514_shangxia_1-9_updated_debug1"
+    test_path = "/Users/liuyichen/Documents/repo/browser-use/eval/query_10-22-shangxia_updated.json"
+    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use/outputs/test_all_claude_sonnet_4_20250514_shangxia_10-22_updated_debug-retest"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
     # asyncio.run(batch_eval(test_res_dir))
