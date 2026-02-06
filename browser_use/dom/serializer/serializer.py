@@ -625,6 +625,7 @@ class DOMTreeSerializer:
 		node.should_display = False
 		for child in node.children:
 			child.should_display = False
+			child.original_node.is_visible = False
 			self._make_all_children_invisible(child)
 
 	def _handle_calendar_visibility(self, node: SimplifiedNode | None) -> None:
