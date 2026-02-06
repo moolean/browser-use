@@ -1015,6 +1015,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		assert self.browser_session is not None, 'BrowserSession is not set up'
 
+		# Add 1 second delay after actions (but not on first step)
+		if self.state.n_steps > 0:
+			self.logger.debug('⏱️  Waiting 1 second for page to update after previous actions...')
+			await asyncio.sleep(1.0)
+
 		self.logger.debug(f'🌐 Step {self.state.n_steps}: Getting browser state...')
 		# Always take screenshots for all steps
 		self.logger.debug('📸 Requesting browser state with include_screenshot=True')

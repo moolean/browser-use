@@ -915,9 +915,8 @@ class SerializedDOMState:
 		include_attributes = include_attributes or DEFAULT_INCLUDE_ATTRIBUTES
 
 		output_text = DOMTreeSerializer.serialize_tree(self._root, include_attributes)
-		with open('output_text.txt', 'w') as f:
-			f.write(output_text)
-		import pdb; pdb.set_trace()
+		# with open('output_text.txt', 'w') as f:
+		# 	f.write(output_text)
 		return output_text
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='eval_representation')
