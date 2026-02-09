@@ -120,6 +120,241 @@ class DomService:
 			self.logger.debug(f'Viewport size detection failed: {e}')
 			# Fallback to default viewport size
 			return 1.0
+	
+	@classmethod
+	def make_children_invisible(cls,node: EnhancedDOMTreeNode | None):
+		if not node:
+			return
+		for child in node.children:
+			child.is_visible = False
+			cls.make_children_invisible(child)
+
+	@classmethod
+	def is_element_clipped_by_overflow(cls, node: EnhancedDOMTreeNode) -> bool:
+		"""
+		Check if the element is clipped (hidden) by a parent with overflow:hidden.
+
+		This walks up the parent chain and checks if any parent has overflow:hidden
+		and if the element's bounds are outside the parent's bounds.
+
+		Args:
+			node: The DOM node to check
+
+		Returns:
+			True if the element is clipped by overflow:hidden, False otherwise
+		"""
+		if not node.snapshot_node or not node.snapshot_node.bounds:
+			return False
+
+		# Get the element's absolute position
+		element_bounds = node.snapshot_node.bounds
+
+		# Walk up the parent chain
+		current_parent = node.parent_node
+		while current_parent:
+			# Skip non-element nodes
+			if current_parent.node_type != NodeType.ELEMENT_NODE:
+				current_parent = current_parent.parent_node
+				continue
+
+			# Check if parent has snapshot data
+			if not current_parent.snapshot_node or not current_parent.snapshot_node.bounds:
+				current_parent = current_parent.parent_node
+				continue
+
+			# Get parent's computed styles
+			parent_styles = current_parent.snapshot_node.computed_styles or {}
+			overflow = parent_styles.get('overflow', '').lower()
+			overflow_x = parent_styles.get('overflow-x', '').lower()
+			overflow_y = parent_styles.get('overflow-y', '').lower()
+
+			# Check if parent has overflow:hidden (or overflow-x/overflow-y:hidden)
+			has_hidden_overflow_x = overflow == 'hidden' or overflow_x == 'hidden'
+			has_hidden_overflow_y = overflow == 'hidden' or overflow_y == 'hidden'
+			# In case of floating point precision issues, we add a small error delta
+			error_delta = 0.01
+
+			if has_hidden_overflow_x or has_hidden_overflow_y:
+				parent_bounds = current_parent.snapshot_node.bounds
+
+				# Check if element is outside parent bounds
+				# For X-axis clipping
+				if has_hidden_overflow_x:
+					element_left = element_bounds.x + element_bounds.width
+					element_right = element_bounds.x
+					parent_left = parent_bounds.x
+					parent_right = parent_bounds.x + parent_bounds.width
+
+					# Element is completely outside parent's X bounds
+					if element_left + error_delta >= parent_right or element_right - error_delta <= parent_left:
+						return True
+
+				# For Y-axis clipping
+				if has_hidden_overflow_y:
+					element_top = element_bounds.y
+					element_bottom = element_bounds.y + element_bounds.height
+					parent_top = parent_bounds.y
+					parent_bottom = parent_bounds.y + parent_bounds.height
+
+					# Element is completely outside parent's Y bounds
+					if element_top + error_delta >= parent_bottom or element_bottom - error_delta <= parent_top:
+						return True
+
+			# Move to next parent
+			current_parent = current_parent.parent_node
+
+		# Element is not clipped
+		return False
+	
+	@classmethod
+	def is_element_z_index_clipped(cls, node: EnhancedDOMTreeNode) -> bool:
+		"""
+		Check if the element is clipped (covered) by siblings with higher z-index.
+
+		This function checks if the element is covered by sibling elements in a parent
+		with overflow:hidden. Elements with higher z-index appear on top. If multiple
+		elements have the same z-index, the one with the larger position index (later
+		in DOM order) appears on top.
+
+		Args:
+			node: The DOM node to check
+
+		Returns:
+			True if the element is clipped (covered by siblings), False if it's visible on top
+		"""
+		# Check if node has a parent
+		if not node.parent_node or node.parent_node.node_type != NodeType.ELEMENT_NODE:
+			return False
+
+		parent = node.parent_node
+
+		# Check if parent has overflow:hidden
+		if not parent.snapshot_node or not parent.snapshot_node.computed_styles:
+			return False
+
+		parent_styles = parent.snapshot_node.computed_styles
+		overflow = parent_styles.get('overflow', '').lower()
+		overflow_x = parent_styles.get('overflow-x', '').lower()
+		overflow_y = parent_styles.get('overflow-y', '').lower()
+
+		has_overflow_hidden = (
+			overflow == 'hidden' or
+			overflow_x == 'hidden' or
+			overflow_y == 'hidden'
+		)
+
+		if not has_overflow_hidden:
+			return False
+
+		# Get siblings (all children of parent)
+		if not parent.children_nodes:
+			return False
+
+		# Get current node's z-index
+		current_z_index = 0
+		if node.snapshot_node and node.snapshot_node.computed_styles:
+			z_index_str = node.snapshot_node.computed_styles.get('z-index', 'auto')
+			if z_index_str != 'auto':
+				try:
+					current_z_index = int(z_index_str)
+				except (ValueError, TypeError):
+					current_z_index = 0
+
+		# Get position attribute to handle stacking contexts
+		current_position = node.snapshot_node.computed_styles.get('position', 'static') if node.snapshot_node and node.snapshot_node.computed_styles else 'static'
+
+		# Elements with position:static always have z-index:auto (treated as 0)
+		if current_position == 'static' or z_index_str == 'auto':
+			current_z_index = 0
+
+		# Find the current node's index among siblings
+		current_node_index = -1
+		try:
+			current_node_index = parent.children_nodes.index(node)
+		except ValueError:
+			current_node_index = len(parent.children_nodes)
+
+		# Find maximum z-index among siblings and count how many have it
+		max_z_index = current_z_index
+		siblings_with_max_z = []
+
+		for idx, sibling in enumerate(parent.children_nodes):
+			# Skip non-element nodes
+			if sibling.node_type != NodeType.ELEMENT_NODE:
+				continue
+			# Skip the current node
+			if sibling is node:
+				continue
+			# Skip invisible siblings
+			if not sibling.is_visible:
+				continue
+
+			# Get sibling's z-index
+			sibling_z_index = 0
+			if sibling.snapshot_node and sibling.snapshot_node.computed_styles and sibling.is_visible:
+				sibling_position = sibling.snapshot_node.computed_styles.get('position', 'static')
+
+				# Only consider z-index for positioned elements
+				if sibling_position != 'static':
+					z_index_str = sibling.snapshot_node.computed_styles.get('z-index', 'auto')
+					if z_index_str != 'auto':
+						try:
+							sibling_z_index = int(z_index_str)
+						except (ValueError, TypeError):
+							sibling_z_index = 0
+					else:
+						sibling_z_index = 0
+
+			# Track maximum z-index
+			if sibling_z_index > max_z_index:
+				max_z_index = sibling_z_index
+				siblings_with_max_z = [(idx, sibling)]
+			elif sibling_z_index == max_z_index:
+				siblings_with_max_z.append((idx, sibling))
+		# Case 1: Current node has the highest z-index (no siblings have higher z-index)
+		if current_z_index > max_z_index:
+			return False  # Not clipped, it's on top
+
+		# Case 2: Current node has the same z-index as the maximum
+		if current_z_index == max_z_index:
+			# Check if any sibling with same z-index comes after current node
+			# (later in DOM order means on top)
+			for sibling_idx, sibling in siblings_with_max_z:
+				if sibling_idx > current_node_index:
+					# A sibling with same z-index but later in DOM order covers this element
+					return True  # Clipped
+
+			# No sibling with same/higher z-index comes after current node
+			# Check if current node is the last one among elements with max z-index
+			max_index_with_max_z = current_node_index
+			for sibling_idx, sibling in siblings_with_max_z:
+				if sibling_idx > max_index_with_max_z:
+					max_index_with_max_z = sibling_idx
+
+			if current_node_index == max_index_with_max_z:
+				# force to make the other children invisible
+				for sibling_idx, sibling in siblings_with_max_z:
+					cls.make_children_invisible(sibling)
+				return False  # Not clipped, it's the topmost
+			else:
+				return True  # Clipped
+
+		# Case 3: Current node has lower z-index than maximum
+		# It's covered by siblings with higher z-index
+		return True
+
+	
+	@classmethod
+	def is_element_visible_according_to_all_cousins(
+		cls, node: EnhancedDOMTreeNode, html_frames: list[EnhancedDOMTreeNode]):
+		"""
+		Check if the element is visible according to all its cousins.
+		"""
+		if cls.is_element_z_index_clipped(node):
+			# # make the children of the children invisible
+			# make_children_invisible(node)
+			return False
+		return True
 
 	@classmethod
 	def is_element_visible_according_to_all_parents(
@@ -144,6 +379,12 @@ class DomService:
 				return False
 		except (ValueError, TypeError):
 			pass
+
+		# Check if element is clipped by parent with overflow:hidden
+		if cls.is_element_clipped_by_overflow(node):
+			# # make the children of the children invisible
+			# make_children_invisible(node)
+			return False
 
 		# Start with the element's local bounds (in its own frame's coordinate system)
 		current_bounds = node.snapshot_node.bounds
@@ -657,8 +898,8 @@ class DomService:
 					)
 
 			# Set visibility using the collected HTML frames
-			dom_tree_node.is_visible = self.is_element_visible_according_to_all_parents(dom_tree_node, updated_html_frames)
-
+			dom_tree_node.is_visible = self.is_element_visible_according_to_all_parents(dom_tree_node, updated_html_frames) and \
+				self.is_element_visible_according_to_all_cousins(dom_tree_node, updated_html_frames)
 			# DEBUG: Log visibility info for form elements in iframes
 			if dom_tree_node.tag_name and dom_tree_node.tag_name.upper() in ['INPUT', 'SELECT', 'TEXTAREA', 'LABEL']:
 				attrs = dom_tree_node.attributes or {}
