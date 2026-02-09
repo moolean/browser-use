@@ -4,7 +4,7 @@ from typing import Any
 
 from browser_use.dom.serializer.clickable_elements import ClickableElementDetector
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
-from browser_use.dom.utils import cap_text_length
+from browser_use.dom.utils import cap_text_length, encode_unprintable_unicode
 from browser_use.dom.views import (
 	DOMRect,
 	DOMSelectorMap,
@@ -1169,6 +1169,8 @@ class DOMTreeSerializer:
 				and len(node.original_node.node_value.strip()) > 0
 			):
 				clean_text = node.original_node.node_value.strip()
+				# Replace unprintable unicode with escape sequences
+				clean_text = encode_unprintable_unicode(clean_text)
 				formatted_text.append(f'{depth_str}{clean_text}')
 
 		# Process children (for non-shadow elements)
@@ -1382,6 +1384,8 @@ class DOMTreeSerializer:
 			# Format attributes, wrapping empty values in quotes for clarity
 			formatted_attrs = []
 			for key, value in attributes_to_include.items():
+				# Replace unprintable unicode with escape sequences in attribute values
+				value = encode_unprintable_unicode(value)
 				capped_value = cap_text_length(value, 100)
 				# Show empty values as key='' instead of key=
 				if not capped_value:

@@ -5,6 +5,54 @@ def cap_text_length(text: str, max_length: int) -> str:
 	return text[:max_length] + '...'
 
 
+def encode_unprintable_unicode(text: str) -> str:
+	"""
+	Replace unprintable unicode characters with escape sequences (\\uXXXX).
+
+	This function processes text content from the DOM and replaces any
+	unprintable unicode characters (code points > 127 that are not printable,
+	and control characters < 32 except for tab, newline, carriage return)
+	with their escape sequence representation.
+
+	Args:
+		text: Text content from DOM
+
+	Returns:
+		Text with unprintable unicode converted to \\uXXXX escape sequences
+
+	Example:
+		>>> encode_unprintable_unicode("Hello \\ue219 World")
+		"Hello \\ue219 World"
+	"""
+	if not text:
+		return text
+
+	result = []
+	for char in text:
+		code_point = ord(char)
+
+		# Handle control characters (< 32)
+		if code_point < 32:
+			# Keep common whitespace characters
+			if char in '\n\r\t':
+				result.append(char)
+			else:
+				# Encode other control characters
+				result.append(f'\\u{code_point:04x}')
+		# Keep printable ASCII (32-127)
+		elif code_point < 128:
+			result.append(char)
+		# Handle unicode characters (>= 128)
+		elif char.isprintable():
+			# Keep printable unicode
+			result.append(char)
+		else:
+			# Encode unprintable unicode
+			result.append(f'\\u{code_point:04x}')
+
+	return ''.join(result)
+
+
 def generate_css_selector_for_element(enhanced_node) -> str | None:
 	"""Generate a CSS selector using node properties from version 0.5.0 approach."""
 	import re
