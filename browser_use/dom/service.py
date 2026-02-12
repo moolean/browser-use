@@ -180,8 +180,8 @@ class DomService:
 				# Check if element is outside parent bounds
 				# For X-axis clipping
 				if has_hidden_overflow_x:
-					element_left = element_bounds.x + element_bounds.width
-					element_right = element_bounds.x
+					element_left = element_bounds.x
+					element_right = element_bounds.x + element_bounds.width
 					parent_left = parent_bounds.x
 					parent_right = parent_bounds.x + parent_bounds.width
 
@@ -278,6 +278,15 @@ class DomService:
 		max_z_index = current_z_index
 		siblings_with_max_z = []
 
+		# get the position of the current node
+		if not node.snapshot_node or not node.snapshot_node.bounds:
+			return False
+		current_node_position = node.snapshot_node.bounds.x, node.snapshot_node.bounds.y
+		current_node_left = current_node_position[0]
+		current_node_right = current_node_position[0] + node.snapshot_node.bounds.width
+		current_node_top = current_node_position[1]
+		current_node_bottom = current_node_position[1] + node.snapshot_node.bounds.height
+
 		for idx, sibling in enumerate(parent.children_nodes):
 			# Skip non-element nodes
 			if sibling.node_type != NodeType.ELEMENT_NODE:
@@ -288,6 +297,16 @@ class DomService:
 			# Skip invisible siblings
 			if not sibling.is_visible:
 				continue
+			# check if the sibling is in the same position and same size as the current node
+			if not sibling.snapshot_node or not sibling.snapshot_node.bounds:
+				continue
+			sibling_mid_point_x = sibling.snapshot_node.bounds.x + sibling.snapshot_node.bounds.width / 2
+			sibling_mid_point_y = sibling.snapshot_node.bounds.y + sibling.snapshot_node.bounds.height / 2
+			# We consider the sibling is not overlapping with the current node if the mid point is not in the current node's bounding box
+			if sibling_mid_point_x <= current_node_left or sibling_mid_point_x >= current_node_right or \
+				sibling_mid_point_y <= current_node_top or sibling_mid_point_y >= current_node_bottom:
+				continue
+
 
 			# Get sibling's z-index
 			sibling_z_index = 0
@@ -334,6 +353,7 @@ class DomService:
 			if current_node_index == max_index_with_max_z:
 				# force to make the other children invisible
 				for sibling_idx, sibling in siblings_with_max_z:
+					# import pdb; pdb.set_trace()
 					cls.make_children_invisible(sibling)
 				return False  # Not clipped, it's the topmost
 			else:
@@ -351,8 +371,6 @@ class DomService:
 		Check if the element is visible according to all its cousins.
 		"""
 		if cls.is_element_z_index_clipped(node):
-			# # make the children of the children invisible
-			# make_children_invisible(node)
 			return False
 		return True
 
@@ -880,7 +898,8 @@ class DomService:
 					# forcefully set the parent node to the shadow root node (helps traverse the tree)
 					shadow_root_node.parent_node = dom_tree_node
 					dom_tree_node.shadow_roots.append(shadow_root_node)
-
+			# if "ant-btn oui-canary-btn ant-btn-sm" in dom_tree_node.attributes.get('class', ''):
+			# 	import pdb; pdb.set_trace()
 			if 'children' in node and node['children']:
 				dom_tree_node.children_nodes = []
 				# Build set of shadow root node IDs to filter them out from children
