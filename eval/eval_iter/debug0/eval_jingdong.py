@@ -21,23 +21,25 @@ import logging
 import sys
 
 import pdb
-sys.path.append("/Users/liuyichen/Documents/repo/browser-use")
+# sys.path.append("/Users/liuyichen/Documents/repo/browser-use")
+sys.path.append("D:\\repo\\browser-use")
 logger = logging.getLogger(__name__)
 os.environ["BROWSER_USE_API_KEY"] = "bu_cj6ZpLpUDP8-QmcoAllBR9EK8IfAdROWhHp3moFnIaE"
 os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = 'false'
-user_data_dir = "/Users/liuyichen/Documents/repo/browser-use/eval/eval_iter/browse_user_dir"
+# user_data_dir = "/Users/liuyichen/Documents/repo/browser-use/eval/eval_iter/browse_user_dir"
+user_data_dir = "D:\\repo\\browser-use\\eval\\eval_iter\\browse_user_dir"
 
 # those 3 for login
-ACCOUNT_stefanoricci = "stefanoricci旗舰店:凯淳AI"
-PASSWORD_stefanoricci = "kc13581897578"
-ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
-PASSWORD_shangxia= "kc13581897578"
+# ACCOUNT_stefanoricci = "stefanoricci旗舰店:凯淳AI"
+# PASSWORD_stefanoricci = "kc13581897578"
+# ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
+# PASSWORD_shangxia= "kc13581897578"
 
 # for jingdong
-# ACCOUNT_stefanoricci = "stefanoricci旗舰店凯淳AI"
-# PASSWORD_stefanoricci = "kc13581897578"
-# ACCOUNT_shangxia = "上下官方旗舰店凯淳AI"
-# PASSWORD_shangxia= "kc13581897578"
+ACCOUNT_stefanoricci = "stefanoricci旗舰店凯淳AI"
+PASSWORD_stefanoricci = "kc13581897578"
+ACCOUNT_shangxia = "上下官方旗舰店凯淳AI"
+PASSWORD_shangxia= "kc13581897578"
 
 GT_PATH = "/Users/liuyichen/Documents/repo/browser-use/updated_data_files"
 
@@ -51,7 +53,7 @@ def format_query(query: str, domain: str = None) -> str:
 请你扮演一个资深的电商运营专家，帮助我完成以下任务：
 任务：{query}
 
-你有三个可以查询的网页，除了这三个网页之外，不能访问其他网页。
+你有三个可以查询的网页，除了这三个网页之外，你只能访问任务中提供的网页，不能访问其他网页。
 1.  淘宝商家中心 生意参谋，网址是：{canmo_url} （适用于淘宝店铺运营）
 2.  天猫商家中心 千牛，网址是：{qianniu_url} （适用于天猫店铺运营）
 3.  阿里妈妈推广管理后台 万象，网址是：{wanxiang_url} （适用于淘宝天猫店铺的推广运营）
@@ -567,13 +569,13 @@ async def batch_test(test_path, test_res_dir, max_retries: int = 3):
     llm_judge = LLMJudge(**kwargs)
     verification_judge = VerificationJudge(**kwargs)
     import pdb; pdb.set_trace()
-    for test_item in data_loader.item[31:]:
+    for test_item in data_loader.item[5:]:
     # for test_item in [data_loader.item[11], data_loader.item[14]]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
         print(f"Saving to {save_path}")
-        if os.path.exists(save_path):
-            print(f"Skipping {save_path} because it already exists")
-            continue
+        # if os.path.exists(save_path):
+        #     print(f"Skipping {save_path} because it already exists")
+        #     continue
         os.makedirs(save_path, exist_ok=True)
         test_output = test_item.copy()
         test_query = test_item["query"]
@@ -672,9 +674,9 @@ async def batch_test(test_path, test_res_dir, max_retries: int = 3):
 
 
 if __name__ == "__main__":
-    test_path = "/Users/liuyichen/Documents/repo/browser-use/updated_data_files/query_22-27-jingdong_updated.json"
+    test_path = "D:\\repo\\browser-use\\updated_data_files\\query_22-27-jingdong_updated.json"
     # test_path = "/Users/liuyichen/Documents/repo/browser-use/updated_data_files/query_1-9_shangxia_updated.json"
-    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use/outputs/test_all_claude_sonnet_4_20250514_jingdong_22-27_updated_debugenMini"
+    test_res_dir = "D:\\repo\\browser-use\\outputs\\test_all_claude_sonnet_4_20250514_jingdong_22-27_updated_debugenMini"
     # test_res_dir = "/Users/liuyichen/Documents/repo/browser-use/outputs/debug"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
