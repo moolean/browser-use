@@ -53,6 +53,8 @@ def main():
                 if test_output["score"]:
                     continue
             print(f"Making video for {test_output["unique_id"]}. Score: {test_output["score"]}")
+            print(f"Query: {test_output["query"]}")
+            print(f"Judgement: {test_output["judgement"]}")
             # assume only one instance
             instance_dir = os.listdir(os.path.join(raw_output_dir, "browser_temp"))
             if len(instance_dir) != 1:
@@ -65,8 +67,6 @@ def main():
                 instance_dir = instance_dir[0]
             screenshot_dir = os.path.join(raw_output_dir, "browser_temp", instance_dir, "screenshots")
             make_video(screenshot_dir, os.path.join(output_dir, f"{test_output["unique_id"]}.mp4"))
-            if total_count >= 5:
-                break
             # print(f"Made video for {test_output["unique_id"]}")
     print(f"Total score: {total_score}, Total count: {total_count}, Average score: {total_score / total_count}")
 

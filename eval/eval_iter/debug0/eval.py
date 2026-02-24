@@ -6,10 +6,17 @@ import zipfile
 import pandas as pd
 import tempfile
 import shutil
+from langchain_anthropic import ChatAnthropic as ChatAnthropicLangchain
+from langchain_core.messages import HumanMessage
+import re
+import urllib.request
+import urllib.parse
+from pathlib import Path
 from browser_use.tools.service import Tools
 from browser_use.llm.openrouter.chat import ChatOpenRouter
 from browser_use import Agent, Browser, ChatBrowserUse, BrowserSession, BrowserProfile, ActionResult
 from langchain_openai import ChatOpenAI
+import base64
 import logging
 import sys
 
@@ -20,13 +27,19 @@ os.environ["BROWSER_USE_API_KEY"] = "bu_cj6ZpLpUDP8-QmcoAllBR9EK8IfAdROWhHp3moFn
 os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = 'false'
 user_data_dir = "/Users/liuyichen/Documents/repo/browser-use/eval/eval_iter/browse_user_dir"
 
-
+# those 3 for login
 ACCOUNT_stefanoricci = "stefanoricci旗舰店:凯淳AI"
 PASSWORD_stefanoricci = "kc13581897578"
 ACCOUNT_shangxia = "上下官方旗舰店:凯淳AI"
 PASSWORD_shangxia= "kc13581897578"
 
-GT_PATH = "/Users/liuyichen/Documents/repo/browser-use/eval/before_spring/new_gt"
+# for jingdong
+# ACCOUNT_stefanoricci = "stefanoricci旗舰店凯淳AI"
+# PASSWORD_stefanoricci = "kc13581897578"
+# ACCOUNT_shangxia = "上下官方旗舰店凯淳AI"
+# PASSWORD_shangxia= "kc13581897578"
+
+GT_PATH = "/Users/liuyichen/Documents/repo/browser-use/updated_data_files"
 
 
 def format_query(query: str, domain: str = None) -> str:
@@ -245,10 +258,10 @@ async def example(query, save_path=None):
     from browser_use import Agent, ChatAnthropic
 
     llm = ChatAnthropic(
-        # base_url='https://api.ppchat.vip',
-        # api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
-        base_url='https://api.uniapi.io/claude',
-        api_key="sk-fx7IRkc1izDuBZH_hi_0k8jVyAlJ9wqTpQcWW2FlbiPbEn9vO67P-iOwXaI",
+        base_url='https://api.ppchat.vip',
+        api_key="sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+        # base_url='https://api.uniapi.io/claude',
+        # api_key="sk-fx7IRkc1izDuBZH_hi_0k8jVyAlJ9wqTpQcWW2FlbiPbEn9vO67P-iOwXaI",
         model='claude-sonnet-4-20250514',
     )
 
@@ -307,6 +320,8 @@ class EvalLoader:
                 query_template = item.get("updated_query_template", None) or item.get(
                     "query_template", None)
                 print(f"Processing {domain} {idx}. index from {count} to {count + len(test_cases) - 1}")
+                if domain == "无需分店铺":
+                    domain = "上下官方旗舰店"
                 count += len(test_cases)
                 for case_num, case in enumerate(test_cases):
                     input_field = case["输入"]
@@ -377,7 +392,167 @@ class LLMJudge(ChatOpenAI):
         return response.content
 
 
-async def batch_test(test_path, test_res_dir):
+class VerificationJudge(ChatAnthropicLangchain):
+    """Judge that verifies agent output against query requirements without ground truth."""
+
+    def verify(self, query: str, prediction: str, pred_file_content: str = None, last_screenshot_content: str = None):
+        """
+        Verify if the agent output satisfies the query requirements.
+        
+        Args:
+            query: The original query/task
+            prediction: Agent's final output/response
+            pred_file_content: Content of files downloaded by the agent
+            
+        Returns:
+            str: Verification result with <judge>True/False</judge> tag
+        """
+        prompt = f"""
+你是一个电商数据专家，负责验证 AI Agent 是否成功完成了用户的任务。
+
+**输入信息：**
+1. 用户任务/问题: {query}
+2. Agent 最终汇报内容: {prediction}
+3. Agent 下载的文件内容:
+{pred_file_content if pred_file_content else "无"}
+4. 来自Agent的最后一页截图
+
+**验证规则：**
+1. **任务完成度**：仔细分析用户任务的所有要求，检查 Agent 是否完成了所有关键点。任务可能包括：
+   - 下载特定文件或数据
+   - 查询特定信息
+   - 执行特定操作
+   - 生成特定格式的输出
+   
+2. **结果导向判别**：如果用户要求下载/查询数据，请优先以"实际下载文件解析内容"为准。即使 Agent 在汇报内容中只提到了一个路径或漏掉了部分汇报，只要"模型下载文件内容"中包含了用户任务要求的所有核心数据，即判定为 True。
+
+3. **处理文件名冲突**：Agent 在下载多个同名文件时，系统可能自动重命名为 `filename (1).csv`, `filename (2).csv` 等。请检查所有列出的文件内容，只要这些文件的内容总和涵盖了任务要求，即为正确。
+
+4. **完整性检查**：
+   - 如果任务要求下载文件，检查文件是否已下载且内容符合要求
+   - 如果任务要求查询信息，检查信息是否完整且准确
+   - 如果任务要求执行操作，检查操作是否成功完成
+   - 如果任务要求特定格式，检查格式是否正确
+
+5. **准确性检查**：
+   - 检查文件中的时间是否与任务要求的时间一致
+   - 最后一页截图在有些任务中可以辅助验证时间是否正确
+
+6. **忽略非关键差异**：
+    - 只要表格内容的核心数值、日期、和维度正确，即可判定为 True
+    - 允许汇报内容中的轻微不完整，只要实际结果（文件内容）符合要求
+
+**输出要求：**
+给出你的详细分析原因，最后结论必须用 <judge>True/False</judge> 括起来。
+"""
+        image_data = base64.b64encode(last_screenshot_content).decode("utf-8")
+        messages = [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt},
+                    {"type": "image", "base64": image_data, "mime_type": "image/jpeg"}
+                ]
+            )
+        ]
+
+        response = self.invoke(
+            messages=messages
+        )
+        print(">>Verification prompt:\n" + prompt)
+        return response.content
+
+
+async def verify_agent_output(
+    query: str,
+    agent_output: str,
+    save_path: str,
+    llm_judge: VerificationJudge | None = None,
+    max_retries: int = 3
+) -> tuple[bool, str]:
+    """
+    Verify if agent output satisfies the query requirements.
+    Downloads any files from URLs mentioned in the output if needed.
+    
+    Args:
+        query: The original query/task
+        agent_output: Agent's final output/response
+        downloads_dir: Directory where agent downloaded files are stored
+        save_path: Path to save verification results
+        llm_judge: Optional VerificationJudge instance. If None, creates one with default config.
+        max_retries: Maximum number of retries if verification fails
+        
+    Returns:
+        Tuple of (is_valid: bool, verification_result: str)
+    """
+    # Initialize judge if not provided
+    if llm_judge is None:
+        kwargs = {
+            "base_url": "https://api.ppchat.vip",
+            "api_key": "sk-0rEu2P0yo7YR8tMTIwAK36ornv2HeF99VcmMWhadwRM4tViX",
+            # "base_url": "https://api.uniapi.io/claude",
+            # "api_key": "sk-fx7IRkc1izDuBZH_hi_0k8jVyAlJ9wqTpQcWW2FlbiPbEn9vO67P-iOwXaI",
+            "model": "claude-sonnet-4-20250514",
+        }
+        llm_judge = VerificationJudge(**kwargs)
+    
+    # 1. Process downloaded files
+    downloads_dir = os.path.join(save_path, "browser_temp")
+    pred_file_content = ""
+    downloaded_files = []
+    if os.path.exists(downloads_dir):
+        downloaded_files = [f for f in os.listdir(
+            downloads_dir) if os.path.isfile(os.path.join(downloads_dir, f))]
+        print(f">>Downloaded files: {downloaded_files}")
+        parsed_contents = [parse_file(os.path.join(
+            downloads_dir, df)) for df in downloaded_files]
+        pred_file_content = "\n\n".join(parsed_contents)
+    # Get the screenshot of the last page
+    screenshot_path_dir = os.path.join(save_path, "browser_temp", "screenshots")
+    all_screenshot_paths = [f for f in os.listdir(screenshot_path_dir) if f.endswith(".png")]
+    all_screenshot_paths.sort(key=lambda x: int(x.split("_")[1].split(".")[0]))
+    last_screenshot_path = os.path.join(screenshot_path_dir, all_screenshot_paths[-1])
+    with open(last_screenshot_path, "rb") as f:
+        last_screenshot_content = f.read()
+    
+    # 2. Verify using LLM judge
+    verification_result = llm_judge.verify(
+        query=query,
+        prediction=agent_output,
+        pred_file_content=pred_file_content,
+        last_screenshot_content=last_screenshot_content
+    )
+    
+    # 3. Extract verdict
+    is_valid = "<judge>True</judge>" in verification_result or "<judge>true</judge>" in verification_result
+    
+    # 54 Save verification result
+    verification_data = {
+        "query": query,
+        "agent_output": agent_output,
+        "downloaded_files": downloaded_files,
+        "verification_result": verification_result,
+        "is_valid": is_valid
+    }
+    
+    verification_path = os.path.join(save_path, "verification_result.json")
+    with open(verification_path, "w", encoding="utf-8") as f:
+        json.dump(verification_data, f, ensure_ascii=False, indent=2)
+    
+    print(f">>Verification result: {'PASSED' if is_valid else 'FAILED'}")
+    print(f">>Verification saved to: {verification_path}")
+    
+    return is_valid, verification_result
+
+
+async def batch_test(test_path, test_res_dir, max_retries: int = 3):
+    """
+    Run batch tests with verification and automatic retry on failure.
+    
+    Args:
+        test_path: Path to test data JSON file
+        test_res_dir: Directory to save test results
+        max_retries: Maximum number of retries if verification fails
+    """
     data_loader = EvalLoader(test_path, test_res_dir + f"/test_output.jsonl")
     kwargs = {
         "model_name": "qwen3-max-2026-01-23",
@@ -390,8 +565,9 @@ async def batch_test(test_path, test_res_dir):
         }
     }
     llm_judge = LLMJudge(**kwargs)
+    verification_judge = VerificationJudge(**kwargs)
     import pdb; pdb.set_trace()
-    for test_item in data_loader.item[37:]:
+    for test_item in data_loader.item[31:]:
     # for test_item in [data_loader.item[11], data_loader.item[14]]:
         save_path = f"{test_res_dir}/debug_{test_item['domain']}_{test_item['idx']}_case{test_item['case_num']}"
         print(f"Saving to {save_path}")
@@ -401,11 +577,40 @@ async def batch_test(test_path, test_res_dir):
         os.makedirs(save_path, exist_ok=True)
         test_output = test_item.copy()
         test_query = test_item["query"]
-        query = format_query( test_item["query"], test_item['domain'])
+        query = format_query(test_item["query"], test_item['domain'])
 
-        res = await example(
-            query, save_path=save_path
-        )
+        # Run with retry logic
+        res = None
+        verification_passed = False
+        verification_result = None
+        attempt = 0
+        
+        while attempt < max_retries and not verification_passed:
+            attempt += 1
+            print(f"\n>>Attempt {attempt}/{max_retries}")
+            
+            # Run the agent
+            res = await example(query, save_path=save_path)
+            
+            # Verify the output
+            verification_passed, verification_result = await verify_agent_output(
+                query=test_query,
+                agent_output=res,
+                save_path=save_path,
+                llm_judge=verification_judge,
+                max_retries=max_retries
+            )
+            
+            if verification_passed:
+                print(f">>Verification PASSED on attempt {attempt}")
+            else:
+                print(f">>Verification FAILED on attempt {attempt}")
+                if attempt < max_retries:
+                    # rename the save_path to save_path_failed
+                    shutil.move(save_path, f"{save_path}_failed_{attempt}")
+                    print(f">>Retrying...")
+                else:
+                    print(f">>Max retries reached. Keeping last attempt results.")
 
         # 1. Process downloaded files
         downloads_dir = os.path.join(save_path, "browser_temp")
@@ -419,7 +624,7 @@ async def batch_test(test_path, test_res_dir):
                 downloads_dir, df)) for df in downloaded_files]
             pred_file_content = "\n\n".join(parsed_contents)
 
-        # 2. Process GT file
+        # 2. Process GT file (for comparison/evaluation)
         gt_file_content = ""
         gt_file_paths = []
         gt = test_item["gt"].copy()
@@ -441,26 +646,36 @@ async def batch_test(test_path, test_res_dir):
 
         print("Final Answer:", res)
         test_output["answer"] = res
+        test_output["verification_result"] = verification_result
+        test_output["verification_passed"] = verification_passed
+        test_output["attempts"] = attempt
+        
         if isinstance(gt, dict) and "图片" in gt:
             gt.pop("图片")
         test_output["gt_file_path"] = gt_file_paths if gt_file_paths else "N/A"
         test_output["downloaded_file_name"] = downloaded_files
         test_output["pred_file_content"] = pred_file_content
         test_output["gt_file_content"] = gt_file_content
+        
+        # Also run LLMJudge for comparison (optional)
         judgement_content = llm_judge.evaluate(
             test_query, res, gt, pred_file_content=pred_file_content, gt_file_content=gt_file_content
         )
         test_output["judgement"] = judgement_content
         is_passed = "<judge>True</judge>" in judgement_content
+        print(f">>Judgement content: {judgement_content}")
         test_output = {"score": is_passed, **test_output}
+        
         with open(f"{test_res_dir}/test_output.jsonl", "a", encoding="utf-8") as output_f:
             output_f.write(json.dumps(
                 test_output, ensure_ascii=False) + "\n")
 
 
 if __name__ == "__main__":
-    test_path = "/Users/liuyichen/Documents/repo/browser-use/eval/query_10-22-shangxia_updated.json"
-    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use/outputs/test_all_claude_sonnet_4_20250514_shangxia_10-22_updated_debug-retest"
+    # test_path = "/Users/liuyichen/Documents/repo/browser-use/updated_data_files/query_22-27-jingdong_updated.json"
+    test_path = "/Users/liuyichen/Documents/repo/browser-use/updated_data_files/query_1-9_shangxia_updated.json"
+    test_res_dir = "/Users/liuyichen/Documents/repo/browser-use/outputs/test_all_claude_sonnet_4_20250514_shangxia_1-9_updated_debug-retest"
+    # test_res_dir = "/Users/liuyichen/Documents/repo/browser-use/outputs/debug"
     os.makedirs(test_res_dir, exist_ok=True)
     asyncio.run(batch_test(test_path, test_res_dir))
     # asyncio.run(batch_eval(test_res_dir))
