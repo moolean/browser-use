@@ -684,6 +684,17 @@ class DownloadsWatchdog(BaseWatchdog):
 			self.logger.debug(f'[DownloadsWatchdog] ⬇️ File download starting: {suggested_filename} from {download_url[:100]}...')
 			self.logger.debug(f'[DownloadsWatchdog] Full CDP event: {event}')
 
+			# To avoid overwriting existing files and to ensure we detect the new one, 
+			# we rename any existing file with the same name first.
+			existing_file = downloads_dir / suggested_filename
+			if existing_file.exists():
+				new_unique_name = await self._get_unique_filename(str(downloads_dir), suggested_filename)
+				try:
+					existing_file.rename(downloads_dir / new_unique_name)
+					self.logger.debug(f'[DownloadsWatchdog] Renamed existing file {suggested_filename} to {new_unique_name}')
+				except Exception as e:
+					self.logger.warning(f'[DownloadsWatchdog] Failed to rename existing file {suggested_filename}: {e}')
+
 			# Since Browser.setDownloadBehavior is already configured, the browser will download the file
 			# We just need to wait for it to appear in the downloads directory
 			expected_path = downloads_dir / suggested_filename
@@ -882,42 +893,30 @@ class DownloadsWatchdog(BaseWatchdog):
 			else:
 				downloads_dir = str(downloads_dir)  # Ensure it's a string
 
-			# Check if Playwright already auto-downloaded the file (due to CDP setup)
-			original_path = Path(downloads_dir) / suggested_filename
-			if original_path.exists() and original_path.stat().st_size > 0:
-				self.logger.debug(
-					f'[DownloadsWatchdog] File already downloaded by Playwright: {original_path} ({original_path.stat().st_size} bytes)'
-				)
+			current_step = 'generating_unique_filename'
+			# Ensure unique filename
+			unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
+			download_path = Path(downloads_dir) / unique_filename
 
-				# Use the existing file instead of creating a duplicate
-				download_path = original_path
-				file_size = original_path.stat().st_size
-				unique_filename = suggested_filename
-			else:
-				current_step = 'generating_unique_filename'
-				# Ensure unique filename
-				unique_filename = await self._get_unique_filename(downloads_dir, suggested_filename)
-				download_path = Path(downloads_dir) / unique_filename
+			self.logger.debug(f'[DownloadsWatchdog] Download started: {unique_filename} from {url[:100]}...')
 
-				self.logger.debug(f'[DownloadsWatchdog] Download started: {unique_filename} from {url[:100]}...')
+			current_step = 'calling_save_as'
+			# Save the download using Playwright's save_as method
+			self.logger.debug(f'[DownloadsWatchdog] Saving download to: {download_path}')
+			self.logger.debug(f'[DownloadsWatchdog] Download path exists: {download_path.parent.exists()}')
+			self.logger.debug(f'[DownloadsWatchdog] Download path writable: {os.access(download_path.parent, os.W_OK)}')
 
-				current_step = 'calling_save_as'
-				# Save the download using Playwright's save_as method
-				self.logger.debug(f'[DownloadsWatchdog] Saving download to: {download_path}')
-				self.logger.debug(f'[DownloadsWatchdog] Download path exists: {download_path.parent.exists()}')
-				self.logger.debug(f'[DownloadsWatchdog] Download path writable: {os.access(download_path.parent, os.W_OK)}')
+			try:
+				self.logger.debug('[DownloadsWatchdog] About to call download.save_as()...')
+				await download.save_as(str(download_path))
+				self.logger.debug(f'[DownloadsWatchdog] Successfully saved download to: {download_path}')
+				current_step = 'save_as_completed'
+			except Exception as save_error:
+				self.logger.error(f'[DownloadsWatchdog] save_as() failed with error: {save_error}')
+				raise save_error
 
-				try:
-					self.logger.debug('[DownloadsWatchdog] About to call download.save_as()...')
-					await download.save_as(str(download_path))
-					self.logger.debug(f'[DownloadsWatchdog] Successfully saved download to: {download_path}')
-					current_step = 'save_as_completed'
-				except Exception as save_error:
-					self.logger.error(f'[DownloadsWatchdog] save_as() failed with error: {save_error}')
-					raise save_error
-
-				# Get file info
-				file_size = download_path.stat().st_size if download_path.exists() else 0
+			# Get file info
+			file_size = download_path.stat().st_size if download_path.exists() else 0
 
 			# Determine file type from extension
 			file_ext = download_path.suffix.lower().lstrip('.')

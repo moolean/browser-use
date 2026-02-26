@@ -307,6 +307,7 @@ class Tools(Generic[Context]):
 			params: ClickElementAction | ClickElementActionIndexOnly, browser_session: BrowserSession
 		) -> ActionResult:
 			assert params.index is not None
+			# import pdb; pdb.set_trace()
 			try:
 				assert params.index != 0, (
 					'Cannot click on element with index 0. If there are no interactive elements use wait(), refresh(), etc. to troubleshoot'
@@ -995,7 +996,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 
 				# Look up the node from the selector map
 				node_slider_box = await browser_session.get_element_by_index(params.index)
-				node_slider_bar = await browser_session.get_element_by_index(params.index + 1)
+				node_slider_bar = node_slider_box.parent_node
 
 				if node_slider_box is None or node_slider_bar is None:
 					msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'

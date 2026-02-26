@@ -50,9 +50,14 @@ DEFAULT_INCLUDE_ATTRIBUTES = [
 	'data-mask',  # Input mask format (e.g., phone numbers, credit cards)
 	'data-inputmask',  # Alternative input mask attribute
 	'data-datepicker',  # jQuery datepicker indicator
+	"data-role",  # Role description for special UI elements (e.g., calendar navigation)
 	'format',  # Synthetic attribute for date/time input format (e.g., MM/dd/yyyy)
 	'expected_format',  # Synthetic attribute for explicit expected format (e.g., AngularJS datepickers)
 	'contenteditable',  # Rich text editor detection
+	'title',
+	'mxv',
+	# 'mxs',
+	# 'mxa',
 	# Webkit shadow DOM identifiers
 	'pseudo',
 	# Accessibility properties from ax_node (ordered by importance for automation)
@@ -909,7 +914,11 @@ class SerializedDOMState:
 
 		include_attributes = include_attributes or DEFAULT_INCLUDE_ATTRIBUTES
 
-		return DOMTreeSerializer.serialize_tree(self._root, include_attributes)
+		output_text = DOMTreeSerializer.serialize_tree(self._root, include_attributes)
+		# with open('output_text.txt', 'w') as f:
+		# 	f.write(output_text)
+		# import pdb; pdb.set_trace()
+		return output_text
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='eval_representation')
 	def eval_representation(

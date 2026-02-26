@@ -77,6 +77,9 @@ class DOMCodeAgentSerializer:
 			return DOMCodeAgentSerializer._serialize_children(node, include_attributes, depth)
 
 		if not node.should_display:
+			if 'date-picker' in node.original_node.attributes.get('class', '') or \
+					'mx-output-bottom' in node.original_node.attributes.get('class', ''):
+				return ''
 			return DOMCodeAgentSerializer._serialize_children(node, include_attributes, depth)
 
 		formatted_text = []

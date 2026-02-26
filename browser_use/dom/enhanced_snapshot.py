@@ -27,6 +27,11 @@ REQUIRED_COMPUTED_STYLES = [
 	'pointer-events',  # Used for clickability logic
 	'position',  # Used for visibility logic
 	'background-color',  # Used for visibility logic
+	"top",
+	"left",
+	"right",
+	"bottom",
+	"z-index"
 ]
 
 

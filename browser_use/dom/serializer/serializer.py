@@ -4,7 +4,7 @@ from typing import Any
 
 from browser_use.dom.serializer.clickable_elements import ClickableElementDetector
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
-from browser_use.dom.utils import cap_text_length
+from browser_use.dom.utils import cap_text_length, encode_unprintable_unicode
 from browser_use.dom.views import (
 	DOMRect,
 	DOMSelectorMap,
@@ -36,6 +36,42 @@ SVG_ELEMENTS = {
 	'text',
 	'tspan',
 }
+
+FORCE_MATCHING_STRINGS = [
+	{
+		"pattern": {
+			"class": "asiYysabw",
+			"mxs": "asiYysaD:_",
+		}, 
+		"target_attributes" : {
+			"data-role": "prev-year",
+		}
+	},
+	{
+		"pattern": {
+			"mxs": "asiYysaD:a",
+		},
+		"target_attributes" : {
+			"data-role": "prev-month",
+		}
+	},
+	{
+		"pattern": {
+			"mxs": "asiYysaD:b",
+		},
+		"target_attributes" : {
+			"data-role": "next-month",
+		}
+	},
+	{
+		"pattern": {
+			"mxs": "asiYysaD:c",
+		},
+		"target_attributes" : {
+			"data-role": "next-year",
+		}
+	}
+]
 
 
 class DOMTreeSerializer:
@@ -532,9 +568,17 @@ class DOMTreeSerializer:
 				if is_visible or is_scrollable or simplified.children:
 					return simplified
 		elif node.node_type == NodeType.TEXT_NODE:
-			# Include meaningful text nodes
+			# Include meaningful text nodes only if they AND their parent are visible
 			is_visible = node.snapshot_node and node.is_visible
-			if is_visible and node.node_value and node.node_value.strip() and len(node.node_value.strip()) > 0:
+
+			# Check if parent element is also visible
+			parent_visible = True
+			if node.parent_node and node.parent_node.node_type == NodeType.ELEMENT_NODE:
+				parent_visible = node.parent_node.snapshot_node and \
+					node.parent_node.is_visible
+
+			if is_visible and parent_visible and node.node_value and \
+				node.node_value.strip() and len(node.node_value.strip()) > 0:
 				return SimplifiedNode(original_node=node, children=[])
 
 		return None
@@ -567,13 +611,23 @@ class DOMTreeSerializer:
 		if (
 			is_visible  # Keep all visible nodes
 			or node.original_node.is_actually_scrollable
-			or node.original_node.node_type == NodeType.TEXT_NODE
+			or (node.original_node.node_type == NodeType.TEXT_NODE and is_visible)  # Keep text nodes only if visible
 			or node.children
 			or is_file_input  # Keep file inputs even if not visible
 		):
 			return node
 
 		return None
+
+	def _make_all_children_invisible(self, node: SimplifiedNode) -> None:
+		"""Make all children of a node invisible."""
+		if not node:
+			return
+		node.should_display = False
+		for child in node.children:
+			child.should_display = False
+			child.original_node.is_visible = False
+			self._make_all_children_invisible(child)
 
 	def _collect_interactive_elements(self, node: SimplifiedNode, elements: list[SimplifiedNode]) -> None:
 		"""Recursively collect interactive elements that are also visible."""
@@ -858,6 +912,23 @@ class DOMTreeSerializer:
 		return False
 
 	@staticmethod
+	def _force_matching_strings(node: SimplifiedNode) -> None:
+		"""Force the matching strings to be displayed."""
+		if not node:
+			return
+		for pattern in FORCE_MATCHING_STRINGS:
+			if node.original_node.attributes:
+				perfect_match = True
+				for key, value in pattern['pattern'].items():
+					if node.original_node.attributes.get(key) is not None and value == node.original_node.attributes.get(key, ''):
+						continue
+					else:
+						perfect_match = False
+						break
+				if perfect_match:
+					node.original_node.attributes.update(pattern['target_attributes'])
+
+	@staticmethod
 	def serialize_tree(node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
 		"""Serialize the optimized tree to string format."""
 		if not node:
@@ -876,14 +947,13 @@ class DOMTreeSerializer:
 		depth_str = depth * '\t'
 		next_depth = depth
 
+		DOMTreeSerializer._force_matching_strings(node)
+
 		if node.original_node.node_type == NodeType.ELEMENT_NODE:
 			# Skip displaying nodes marked as should_display=False
+			# undisplay all
 			if not node.should_display:
-				for child in node.children:
-					child_text = DOMTreeSerializer.serialize_tree(child, include_attributes, depth)
-					if child_text:
-						formatted_text.append(child_text)
-				return '\n'.join(formatted_text)
+				return '\n'
 
 			# Special handling for SVG elements - show the tag but collapse children
 			if node.original_node.tag_name.lower() == 'svg':
@@ -1025,15 +1095,20 @@ class DOMTreeSerializer:
 				formatted_text.append(f'{depth_str}Shadow End')
 
 		elif node.original_node.node_type == NodeType.TEXT_NODE:
-			# Include visible text
+			# Include visible text only if node is visible AND should be displayed
 			is_visible = node.original_node.snapshot_node and node.original_node.is_visible
+			# Also check if the text node should be displayed (parent visibility)
+			should_display = node.should_display if hasattr(node, 'should_display') else True
 			if (
 				is_visible
+				and should_display
 				and node.original_node.node_value
 				and node.original_node.node_value.strip()
 				and len(node.original_node.node_value.strip()) > 0
 			):
 				clean_text = node.original_node.node_value.strip()
+				# Replace unprintable unicode with escape sequences
+				clean_text = encode_unprintable_unicode(clean_text)
 				formatted_text.append(f'{depth_str}{clean_text}')
 
 		# Process children (for non-shadow elements)
@@ -1136,6 +1211,28 @@ class DOMTreeSerializer:
 							attributes_to_include['placeholder'] = 'mm/dd/yyyy'
 							attributes_to_include['format'] = 'mm/dd/yyyy'
 
+		# Special handling for calendar navigation icons
+		# Hard code the calendar navigation icons for now
+		if node.attributes and 'mxs' in node.attributes:
+			mxs_value = node.attributes.get('mxs', '')
+			# Map mxs values to calendar navigation roles
+			calendar_nav_roles = {
+				'asiYysjsD:_': 'prev-year',
+				'asiYysjsD:a': 'prev-month',
+				'asiYysjsD:b': 'next-month',
+				'asiYysjsD:c': 'next-year',
+			}
+			if mxs_value in calendar_nav_roles:
+				# Check if this is within a calendar navigation container (has class asiYysjsbx)
+				# by looking for parent or nearby context indicators
+				parent_class = ''
+				# Since we don't have easy parent access here, check if the element itself
+				# or its attributes suggest it's a calendar navigation element
+				element_classes = node.attributes.get('class', '')
+				if 'asiYysjsbv' in element_classes or 'asiYysjsbw' in element_classes:
+					# Add data-role attribute to help LLM understand the purpose
+					attributes_to_include['data-role'] = calendar_nav_roles[mxs_value]
+
 		# Include accessibility properties
 		if node.ax_node and node.ax_node.properties:
 			for prop in node.ax_node.properties:
@@ -1225,6 +1322,8 @@ class DOMTreeSerializer:
 			# Format attributes, wrapping empty values in quotes for clarity
 			formatted_attrs = []
 			for key, value in attributes_to_include.items():
+				# Replace unprintable unicode with escape sequences in attribute values
+				value = encode_unprintable_unicode(value)
 				capped_value = cap_text_length(value, 100)
 				# Show empty values as key='' instead of key=
 				if not capped_value:
